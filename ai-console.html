@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal AI Console - SSL Aware</title>
+    <script>window.__OLLAMA_API_KEY__ = "{{env "OLLAMA_API_KEY"}}";</script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --bg: #f8f9fa; --card: #ffffff; --primary: #1a73e8;
+            --gpu: #2ecc71; --cpu: #f39c12; --hybrid: #9b59b6;
+            --text: #202124; --text-sec: #5f6368;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: var(--card); padding: 2rem; border-radius: 16px; box-shadow: 0 4px 25px rgba(0,0,0,0.1); width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 1rem; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
+        .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f1f3f4; padding: 15px; border-radius: 10px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-weight: 600; font-size: 0.85rem; color: var(--text-sec); }
+        input, select, textarea { padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 0.95rem; }
+        .source-bar { display: flex; gap: 15px; font-size: 0.9rem; font-weight: 500; }
+        .badge { padding: 4px 10px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; }
+
+        /* Response area — markdown-aware */
+        #response {
+            background: #1e1e1e; color: #d4d4d4; padding: 1.5rem; border-radius: 8px;
+            min-height: 150px; max-height: 500px; overflow-y: auto;
+            font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.92rem; line-height: 1.7;
+        }
+        #response p { margin: 0.4em 0; }
+        #response h1, #response h2, #response h3, #response h4 { color: #e8eaed; margin: 0.9em 0 0.3em; font-family: 'Segoe UI', system-ui, sans-serif; }
+        #response h1 { font-size: 1.3em; border-bottom: 1px solid #3c3c3c; padding-bottom: 0.2em; }
+        #response h2 { font-size: 1.15em; }
+        #response h3 { font-size: 1em; }
+        #response code { background: #2d2d2d; padding: 2px 6px; border-radius: 3px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.85em; color: #f8f8f2; }
+        #response pre { background: #2d2d2d; padding: 1em; border-radius: 6px; overflow-x: auto; margin: 0.7em 0; }
+        #response pre code { background: none; padding: 0; font-size: 0.85em; }
+        #response ul, #response ol { padding-left: 1.6em; margin: 0.4em 0; }
+        #response li { margin: 0.25em 0; }
+        #response blockquote { border-left: 3px solid #8ab4f8; margin: 0.5em 0; padding: 0.3em 0 0.3em 1em; color: #9aa0a6; }
+        #response table { border-collapse: collapse; width: 100%; margin: 0.7em 0; font-size: 0.88em; }
+        #response th, #response td { border: 1px solid #3c3c3c; padding: 6px 10px; text-align: left; }
+        #response th { background: #2d2d2d; color: #e8eaed; }
+        #response a { color: #8ab4f8; text-decoration: none; }
+        #response a:hover { text-decoration: underline; }
+        #response strong { color: #e8eaed; }
+        #response hr { border: none; border-top: 1px solid #3c3c3c; margin: 1em 0; }
+
+        .reasoning-box {
+            background: #2d2d2d; color: #8ab4f8; padding: 10px 14px; border-radius: 5px;
+            margin-bottom: 10px; font-size: 0.85rem; border-left: 3px solid #8ab4f8; display: none;
+            line-height: 1.6; max-height: 200px; overflow-y: auto;
+        }
+        .reasoning-box p { margin: 0.3em 0; }
+        .reasoning-box code { background: #3c3c3c; padding: 1px 4px; border-radius: 3px; font-size: 0.82em; }
+
+        .btn-main { padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn-small { padding: 5px 10px; background: #5f6368; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; margin-top: 5px; }
+        .btn-main:hover, .btn-small:hover { filter: brightness(0.9); }
+        .metrics { display: flex; gap: 20px; font-size: 0.75rem; color: var(--text-sec); }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #ccc; }
+        .status-online { background: var(--gpu); }
+        .auth-status { font-size: 0.7rem; margin-left: 10px; font-weight: bold; }
+        .btn-copy { padding: 6px 9px; background: #5f6368; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; flex-shrink: 0; line-height: 1; transition: background 0.2s; }
+        .btn-copy:hover { background: #4a4f54; }
+        .btn-copy.copied { background: #2ecc71; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <h2 style="margin:0">AI Intelligence Console</h2>
+            <div class="source-bar" style="margin-top:10px">
+                <label><input type="radio" name="source" value="docker" checked> Docker (SSL)</label>
+                <label><input type="radio" name="source" value="native"> Native (SSL)</label>
+                <label><input type="radio" name="source" value="direct"> Direct (11434)</label>
+                <label><input type="radio" name="source" value="custom"> SaaS / Custom</label>
+            </div>
+        </div>
+        <div style="text-align: right">
+            <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
+            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;">&#x1F9E0; REASONING MODEL</div>
+        </div>
+    </div>
+    <div class="grid-config">
+        <div class="form-group" id="presetGroup" style="display:none">
+            <label>Provider Preset</label>
+            <select id="providerPreset">
+                <option value="">-- Select Provider --</option>
+                <option value="https://api.openai.com/v1">OpenAI</option>
+                <option value="https://api.anthropic.com/v1">Anthropic (Claude)</option>
+                <option value="https://generativelanguage.googleapis.com/v1beta">Google Gemini</option>
+                <option value="https://api.deepseek.com">DeepSeek Cloud</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Endpoint URL</label>
+            <input type="text" id="apiUrl" placeholder="https://localhost:11443">
+        </div>
+        <div class="form-group">
+            <label>API Key / Token
+                <button id="testAuthBtn" class="btn-small">Test Auth</button>
+                <span id="authResult" class="auth-status"></span>
+            </label>
+            <div style="display:flex;gap:5px;align-items:center;">
+                <input type="text" id="apiKey" placeholder="Pegar aquí la API key" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copiar API Key">📋</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Context Length</label>
+            <input type="number" id="contextLen" value="4096" step="1024">
+        </div>
+        <div class="form-group">
+            <label>Model Name</label>
+            <div style="display:flex;gap:5px;align-items:center;">
+                <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
+                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copiar nombre del modelo">📋</button>
+                <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
+                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copiar nombre del modelo" style="display:none">📋</button>
+            </div>
+        </div>
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+            <label><input type="checkbox" id="enableReasoning"> Enable Reasoning Mode</label>
+        </div>
+    </div>
+    <textarea id="promptInput" rows="4" placeholder="Type your message here..."></textarea>
+    <button id="sendBtn" class="btn-main">Execute Inference</button>
+    <div class="metrics">
+        <span>Status: <span class="status-dot" id="statusDot"></span> <span id="statusText">Ready</span></span>
+        <span>Latency: <span id="mTotal">-</span></span>
+        <span id="mVram">VRAM: -</span>
+    </div>
+    <div id="reasoningOutput" class="reasoning-box"></div>
+    <div id="response"><em style="color:#666">Waiting for query...</em></div>
+</div>
+
+<script>
+    marked.use({ gfm: true, breaks: true });
+
+    function renderMd(text) {
+        if (!text) return '';
+        return marked.parse(text);
+    }
+
+    function applyHighlight(container) {
+        container.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    }
+
+    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt' };
+    const els = {
+        radios: document.getElementsByName('source'),
+        apiUrl: document.getElementById('apiUrl'),
+        apiKey: document.getElementById('apiKey'),
+        contextLen: document.getElementById('contextLen'),
+        modelSelect: document.getElementById('modelSelect'),
+        modelCustom: document.getElementById('modelCustom'),
+        presetGroup: document.getElementById('presetGroup'),
+        providerPreset: document.getElementById('providerPreset'),
+        prompt: document.getElementById('promptInput'),
+        btn: document.getElementById('sendBtn'),
+        testAuthBtn: document.getElementById('testAuthBtn'),
+        authResult: document.getElementById('authResult'),
+        resp: document.getElementById('response'),
+        reasoningBox: document.getElementById('reasoningOutput'),
+        reasoningInd: document.getElementById('reasoningIndicator'),
+        enableReasoning: document.getElementById('enableReasoning'),
+        badge: document.getElementById('hwBadge'),
+        mTotal: document.getElementById('mTotal'),
+        mVram: document.getElementById('mVram'),
+        statusText: document.getElementById('statusText'),
+        statusDot: document.getElementById('statusDot')
+    };
+
+    function saveConfig() {
+        localStorage.setItem(STORAGE.CONFIG, JSON.stringify({
+            source: Array.from(els.radios).find(r => r.checked).value,
+            url: els.apiUrl.value, key: els.apiKey.value,
+            ctx: els.contextLen.value, reasoning: els.enableReasoning.checked
+        }));
+    }
+
+    function loadConfig() {
+        const serverKey = window.__OLLAMA_API_KEY__ || '';
+        const data = localStorage.getItem(STORAGE.CONFIG);
+        if (!data) {
+            if (serverKey) els.apiKey.value = serverKey;
+            handleSourceChange();
+            return;
+        }
+        const c = JSON.parse(data);
+        const r = Array.from(els.radios).find(rad => rad.value === c.source);
+        if (r) r.checked = true;
+        els.apiUrl.value = c.url || '';
+        els.apiKey.value = c.key || serverKey;
+        els.contextLen.value = c.ctx || 4096;
+        els.enableReasoning.checked = c.reasoning || false;
+        handleSourceChange();
+    }
+
+    function handleSourceChange() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        const host = window.location.hostname;
+        const isCustom = source === 'custom';
+        els.presetGroup.style.display = isCustom ? 'block' : 'none';
+        els.modelCustom.style.display = isCustom ? 'block' : 'none';
+        document.getElementById('modelCustomCopyBtn').style.display = isCustom ? 'inline-flex' : 'none';
+        els.modelSelect.style.display = isCustom ? 'none' : 'block';
+        document.getElementById('modelSelectCopyBtn').style.display = isCustom ? 'none' : 'inline-flex';
+        if (source === 'docker') els.apiUrl.value = `https://${host}:11443`;
+        else if (source === 'native') els.apiUrl.value = `https://${host}:11444`;
+        else if (source === 'direct') els.apiUrl.value = `http://${host}:11434`;
+        loadModels();
+        saveConfig();
+    }
+
+    function copyToClipboard(id, btn) {
+        const el = document.getElementById(id);
+        const text = el.value;
+        if (!text) return;
+        const orig = btn.textContent;
+        const finish = () => {
+            btn.textContent = '✓';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+        };
+        navigator.clipboard.writeText(text).then(finish).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta); finish();
+        });
+    }
+
+    async function testAuthentication() {
+        const url = els.apiUrl.value;
+        const key = els.apiKey.value;
+        if (!key) { els.authResult.innerText = 'Enter a key first'; els.authResult.style.color = 'orange'; return; }
+        els.authResult.innerText = 'Testing...';
+        els.authResult.style.color = 'var(--text-sec)';
+        try {
+            const res = await fetch(`${url}/v1/models`, { headers: { 'Authorization': `Bearer ${key}` } });
+            if (res.ok) {
+                els.authResult.innerText = '✓ Key valid';
+                els.authResult.style.color = 'var(--gpu)';
+            } else {
+                const data = await res.json().catch(() => ({}));
+                els.authResult.innerText = `✗ ${res.status}: ${data.error?.code || 'Unauthorized'}`;
+                els.authResult.style.color = 'red';
+            }
+        } catch (e) {
+            els.authResult.innerText = 'Connection failed';
+            els.authResult.style.color = 'red';
+        }
+    }
+
+    async function loadModels() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        if (source === 'custom') return;
+        try {
+            const res = await fetch(`${els.apiUrl.value}/api/tags`);
+            const data = await res.json();
+            els.modelSelect.innerHTML = data.models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+            els.statusDot.className = 'status-dot status-online';
+            els.statusText.innerText = 'Online';
+            checkReasoningCapability();
+        } catch (e) {
+            els.statusDot.className = 'status-dot';
+            els.statusText.innerText = 'Offline / Error';
+        }
+    }
+
+    function checkReasoningCapability() {
+        const name = els.modelSelect.value.toLowerCase();
+        const isReasoning = name.includes('r1') || name.includes('o1') || name.includes('reason');
+        els.reasoningInd.style.display = isReasoning ? 'block' : 'none';
+    }
+
+    async function execute() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        const url = els.apiUrl.value;
+        const model = source === 'custom' ? els.modelCustom.value : els.modelSelect.value;
+        const prompt = els.prompt.value;
+        if (!prompt || !model) return;
+        localStorage.setItem(STORAGE.LAST_PROMPT, prompt);
+        els.btn.disabled = true;
+        els.resp.innerHTML = '<em style="color:#666">Thinking...</em>';
+        els.reasoningBox.style.display = 'none';
+        const start = performance.now();
+        try {
+            const res = await fetch(`${url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': els.apiKey.value ? `Bearer ${els.apiKey.value}` : 'Bearer ollama'
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: parseInt(els.contextLen.value)
+                })
+            });
+            const data = await res.json();
+            const content = data.choices[0].message.content;
+
+            if (content.includes('<think>')) {
+                const parts = content.split('</think>');
+                const thinking = parts[0].replace('<think>', '').trim();
+                const answer = parts[1].trim();
+                els.reasoningBox.innerHTML = renderMd(thinking);
+                els.reasoningBox.style.display = 'block';
+                applyHighlight(els.reasoningBox);
+                els.resp.innerHTML = renderMd(answer);
+            } else {
+                els.resp.innerHTML = renderMd(content);
+            }
+
+            applyHighlight(els.resp);
+            els.mTotal.innerText = `${((performance.now() - start) / 1000).toFixed(2)}s`;
+            updateHardwareMetrics();
+        } catch (e) {
+            els.resp.innerHTML = `<span style="color:#e74c3c">Error: ${e.message}</span>`;
+        } finally {
+            els.btn.disabled = false;
+        }
+    }
+
+    async function updateHardwareMetrics() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        if (source === 'custom') return;
+        try {
+            const res = await fetch(`${els.apiUrl.value}/api/ps`);
+            const data = await res.json();
+            const model = data.models?.find(m => els.modelSelect.value.startsWith(m.name));
+            if (model) {
+                const gpuPct = Math.round((model.size_vram / model.size) * 100);
+                els.badge.innerText = gpuPct === 100 ? 'GPU MODE' : (gpuPct > 0 ? 'HYBRID' : 'CPU MODE');
+                els.badge.style.background = gpuPct === 100 ? '#2ecc71' : (gpuPct > 0 ? '#9b59b6' : '#f39c12');
+                els.mVram.innerText = `VRAM: ${(model.size_vram / 1e9).toFixed(2)}GB`;
+            }
+        } catch (e) {}
+    }
+
+    els.radios.forEach(r => r.addEventListener('change', handleSourceChange));
+    els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); });
+    els.modelSelect.addEventListener('change', checkReasoningCapability);
+    els.btn.addEventListener('click', execute);
+    els.testAuthBtn.addEventListener('click', testAuthentication);
+    window.onload = () => {
+        loadConfig();
+        els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
+        setInterval(updateHardwareMetrics, 5000);
+    };
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+services:
+  ollama:
+    image: ollama/ollama:rocm
+    container_name: ollama
+    restart: always
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: always
+    ports:
+      - "11443:11434"
+      - "443:443"
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile
+      - .:/usr/share/caddy
+      - caddy_data:/data
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
+  caddy_data:

@@ -1,0 +1,103 @@
+{
+    admin off
+}
+
+# Puerto 11443 externo → 11434 interno Caddy (Ollama Docker)
+https://localhost:11434, https://127.0.0.1:11434 {
+
+    root * /usr/share/caddy
+
+    # CORS preflight — sin auth
+    @preflight method OPTIONS
+    handle @preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        respond "" 204
+    }
+
+    # Bearer auth para /v1/* (OpenAI-compatible endpoints)
+    @unauthorized {
+        not header Authorization "Bearer {env.OLLAMA_API_KEY}"
+        path /v1/*
+    }
+    handle @unauthorized {
+        header Content-Type "application/json"
+        header Access-Control-Allow-Origin "*"
+        respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
+    }
+
+    handle /api/* {
+        reverse_proxy ollama:11434 {
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    handle /v1/* {
+        reverse_proxy ollama:11434 {
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    handle {
+        templates
+        file_server
+    }
+
+    header {
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+    }
+
+    tls internal
+}
+
+# Puerto 11444 externo → 11435 interno Caddy (Ollama nativo via proxy)
+https://localhost:11435, https://127.0.0.1:11435 {
+
+    root * /usr/share/caddy
+
+    @preflight method OPTIONS
+    handle @preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        respond "" 204
+    }
+
+    @unauthorized {
+        not header Authorization "Bearer {env.OLLAMA_API_KEY}"
+        path /v1/*
+    }
+    handle @unauthorized {
+        header Content-Type "application/json"
+        header Access-Control-Allow-Origin "*"
+        respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
+    }
+
+    handle /api/* {
+        reverse_proxy host.docker.internal:11434 {
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    handle /v1/* {
+        reverse_proxy host.docker.internal:11434 {
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    handle {
+        templates
+        file_server
+    }
+
+    header {
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+    }
+
+    tls internal
+}

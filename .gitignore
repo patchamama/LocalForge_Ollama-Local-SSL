@@ -1,0 +1,26 @@
+# Generated at runtime — never commit
+root.crt
+docker-compose.yml
+
+# Working drafts and review folder
+revisar/
+installator/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Caddy runtime data (if accidentally mounted locally)
+caddy_data/
+
+# Temporary files
+*.tmp
+*.log
+.env
