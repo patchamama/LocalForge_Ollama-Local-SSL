@@ -22,6 +22,7 @@ services:
       - "443:443"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy

@@ -29,5 +29,12 @@ if (Test-Path $sourceFile) {
     Copy-Item $sourceFile "docker-compose.yml" -Force
     Write-Host "Success: docker-compose.yml updated for $type" -ForegroundColor Green
 } else {
-    Write-Error "Template $sourceFile not found!"
+    Write-Host "[WARN] Template $sourceFile not found. Using hybrid as fallback." -ForegroundColor Yellow
+    $fallback = "config\docker-compose.hybrid.yml"
+    if (Test-Path $fallback) {
+        Copy-Item $fallback "docker-compose.yml" -Force
+        Write-Host "docker-compose.yml set for hybrid (fallback)" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] No fallback template found. docker-compose.yml unchanged." -ForegroundColor Yellow
+    }
 }

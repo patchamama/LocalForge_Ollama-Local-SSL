@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal AI Console - SSL Aware</title>
     <script>window.__OLLAMA_API_KEY__ = "{{env "OLLAMA_API_KEY"}}";</script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -22,16 +23,15 @@
         label { font-weight: 600; font-size: 0.85rem; color: var(--text-sec); }
         input, select, textarea { padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 0.95rem; }
         .source-bar { display: flex; gap: 15px; font-size: 0.9rem; font-weight: 500; }
-        .badge { padding: 4px 10px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; }
+        .badge { padding: 4px 10px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; white-space: nowrap; }
 
-        /* Response area — markdown-aware */
         #response {
             background: #1e1e1e; color: #d4d4d4; padding: 1.5rem; border-radius: 8px;
             min-height: 150px; max-height: 500px; overflow-y: auto;
             font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.92rem; line-height: 1.7;
         }
         #response p { margin: 0.4em 0; }
-        #response h1, #response h2, #response h3, #response h4 { color: #e8eaed; margin: 0.9em 0 0.3em; font-family: 'Segoe UI', system-ui, sans-serif; }
+        #response h1, #response h2, #response h3, #response h4 { color: #e8eaed; margin: 0.9em 0 0.3em; }
         #response h1 { font-size: 1.3em; border-bottom: 1px solid #3c3c3c; padding-bottom: 0.2em; }
         #response h2 { font-size: 1.15em; }
         #response h3 { font-size: 1em; }
@@ -60,11 +60,11 @@
         .btn-main { padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
         .btn-small { padding: 5px 10px; background: #5f6368; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; margin-top: 5px; }
         .btn-main:hover, .btn-small:hover { filter: brightness(0.9); }
-        .metrics { display: flex; gap: 20px; font-size: 0.75rem; color: var(--text-sec); }
+        .metrics { display: flex; gap: 20px; font-size: 0.75rem; color: var(--text-sec); flex-wrap: wrap; }
         .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #ccc; }
         .status-online { background: var(--gpu); }
         .auth-status { font-size: 0.7rem; margin-left: 10px; font-weight: bold; }
-        .btn-copy { padding: 6px 9px; background: #5f6368; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; flex-shrink: 0; line-height: 1; transition: background 0.2s; }
+        .btn-copy { padding: 5px 8px; background: #5f6368; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; flex-shrink: 0; line-height: 1; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; }
         .btn-copy:hover { background: #4a4f54; }
         .btn-copy.copied { background: #2ecc71; }
     </style>
@@ -83,7 +83,7 @@
         </div>
         <div style="text-align: right">
             <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
-            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;">&#x1F9E0; REASONING MODEL</div>
+            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
         </div>
     </div>
     <div class="grid-config">
@@ -107,8 +107,8 @@
                 <span id="authResult" class="auth-status"></span>
             </label>
             <div style="display:flex;gap:5px;align-items:center;">
-                <input type="text" id="apiKey" placeholder="Pegar aquí la API key" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
-                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copiar API Key">📋</button>
+                <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group">
@@ -119,9 +119,9 @@
             <label>Model Name</label>
             <div style="display:flex;gap:5px;align-items:center;">
                 <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
-                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copiar nombre del modelo">📋</button>
+                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
                 <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
-                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copiar nombre del modelo" style="display:none">📋</button>
+                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
@@ -133,7 +133,7 @@
     <div class="metrics">
         <span>Status: <span class="status-dot" id="statusDot"></span> <span id="statusText">Ready</span></span>
         <span>Latency: <span id="mTotal">-</span></span>
-        <span id="mVram">VRAM: -</span>
+        <span id="mVram">Memory: -</span>
     </div>
     <div id="reasoningOutput" class="reasoning-box"></div>
     <div id="response"><em style="color:#666">Waiting for query...</em></div>
@@ -222,11 +222,11 @@
         const el = document.getElementById(id);
         const text = el.value;
         if (!text) return;
-        const orig = btn.textContent;
+        const origHTML = btn.innerHTML;
         const finish = () => {
-            btn.textContent = '✓';
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
             btn.classList.add('copied');
-            setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+            setTimeout(() => { btn.innerHTML = origHTML; btn.classList.remove('copied'); }, 1500);
         };
         navigator.clipboard.writeText(text).then(finish).catch(() => {
             const ta = document.createElement('textarea');
@@ -245,11 +245,11 @@
         try {
             const res = await fetch(`${url}/v1/models`, { headers: { 'Authorization': `Bearer ${key}` } });
             if (res.ok) {
-                els.authResult.innerText = '✓ Key valid';
+                els.authResult.innerText = '[OK] Key valid';
                 els.authResult.style.color = 'var(--gpu)';
             } else {
                 const data = await res.json().catch(() => ({}));
-                els.authResult.innerText = `✗ ${res.status}: ${data.error?.code || 'Unauthorized'}`;
+                els.authResult.innerText = `[ERR] ${res.status}: ${data.error?.code || 'Unauthorized'}`;
                 els.authResult.style.color = 'red';
             }
         } catch (e) {
@@ -337,10 +337,28 @@
             const data = await res.json();
             const model = data.models?.find(m => els.modelSelect.value.startsWith(m.name));
             if (model) {
-                const gpuPct = Math.round((model.size_vram / model.size) * 100);
-                els.badge.innerText = gpuPct === 100 ? 'GPU MODE' : (gpuPct > 0 ? 'HYBRID' : 'CPU MODE');
-                els.badge.style.background = gpuPct === 100 ? '#2ecc71' : (gpuPct > 0 ? '#9b59b6' : '#f39c12');
-                els.mVram.innerText = `VRAM: ${(model.size_vram / 1e9).toFixed(2)}GB`;
+                const gpuBytes = model.size_vram || 0;
+                const cpuBytes = (model.size || 0) - gpuBytes;
+                const gpuPct = model.size > 0 ? Math.round((gpuBytes / model.size) * 100) : 0;
+                const gpuGB = (gpuBytes / 1e9).toFixed(2);
+                const cpuGB = (cpuBytes / 1e9).toFixed(2);
+                if (gpuPct === 100) {
+                    els.badge.textContent = `GPU | ${gpuGB} GB`;
+                    els.badge.style.background = '#2ecc71';
+                    els.mVram.textContent = `VRAM: ${gpuGB} GB`;
+                } else if (gpuPct > 0) {
+                    els.badge.textContent = 'HYBRID';
+                    els.badge.style.background = '#9b59b6';
+                    els.mVram.textContent = `VRAM: ${gpuGB} GB  RAM: ${cpuGB} GB`;
+                } else {
+                    els.badge.textContent = `CPU | ${cpuGB} GB`;
+                    els.badge.style.background = '#f39c12';
+                    els.mVram.textContent = `RAM: ${cpuGB} GB`;
+                }
+            } else {
+                els.badge.textContent = 'Standby';
+                els.badge.style.background = '#95a5a6';
+                els.mVram.textContent = 'Memory: -';
             }
         } catch (e) {}
     }

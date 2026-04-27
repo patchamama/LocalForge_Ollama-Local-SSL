@@ -30,12 +30,20 @@ https://localhost:11434, https://127.0.0.1:11434 {
     handle /api/* {
         reverse_proxy ollama:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
     handle /v1/* {
         reverse_proxy ollama:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
@@ -79,12 +87,20 @@ https://localhost:11435, https://127.0.0.1:11435 {
     handle /api/* {
         reverse_proxy host.docker.internal:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
     handle /v1/* {
         reverse_proxy host.docker.internal:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 

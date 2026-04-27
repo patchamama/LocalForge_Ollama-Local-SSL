@@ -33,7 +33,7 @@ if [ ! -f "$BASEDIR/.env" ]; then
     else
         GENERATED_KEY=$(head -c 32 /dev/urandom | base64 | tr -d '=/+\n' | head -c 32)
     fi
-    printf 'OLLAMA_API_KEY=%s\n' "$GENERATED_KEY" > "$BASEDIR/.env"
+    printf 'OLLAMA_API_KEY=%s\nOLLAMA_TIMEOUT=10m\n' "$GENERATED_KEY" > "$BASEDIR/.env"
     ok ".env created. Use this key in ELO DMS: $GENERATED_KEY"
 else
     info ".env already exists, skipping key generation."
@@ -73,12 +73,20 @@ https://localhost:11434, https://127.0.0.1:11434 {
     handle /api/* {
         reverse_proxy ollama:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
     handle /v1/* {
         reverse_proxy ollama:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
@@ -122,12 +130,20 @@ https://localhost:11435, https://127.0.0.1:11435 {
     handle /api/* {
         reverse_proxy host.docker.internal:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
     handle /v1/* {
         reverse_proxy host.docker.internal:11434 {
             header_down -Access-Control-Allow-Origin
+            transport http {
+                response_header_timeout {$OLLAMA_TIMEOUT}
+                dial_timeout 30s
+            }
         }
     }
 
@@ -163,6 +179,7 @@ services:
       - "11444:11435"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -199,6 +216,7 @@ services:
       - "11444:11435"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -239,6 +257,7 @@ services:
       - "11444:11435"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -278,6 +297,7 @@ services:
       - "11444:11435"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -314,6 +334,7 @@ services:
       - "11444:11435"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -338,11 +359,12 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal AI Console - SSL Aware</title>
     <script>window.__OLLAMA_API_KEY__ = "{{env "OLLAMA_API_KEY"}}";</script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <style>
-        :root { --bg:#f8f9fa;--card:#fff;--primary:#1a73e8;--gpu:#2ecc71;--cpu:#f39c12;--hybrid:#9b59b6;--text:#202124;--text-sec:#5f6368; }
+        :root{--bg:#f8f9fa;--card:#fff;--primary:#1a73e8;--gpu:#2ecc71;--cpu:#f39c12;--hybrid:#9b59b6;--text:#202124;--text-sec:#5f6368;}
         body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:20px;display:flex;justify-content:center;}
         .container{background:var(--card);padding:2rem;border-radius:16px;box-shadow:0 4px 25px rgba(0,0,0,.1);width:100%;max-width:900px;display:flex;flex-direction:column;gap:1rem;}
         .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #eee;padding-bottom:1rem;}
@@ -351,7 +373,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         label{font-weight:600;font-size:.85rem;color:var(--text-sec);}
         input,select,textarea{padding:10px;border:1px solid #dadce0;border-radius:6px;font-size:.95rem;}
         .source-bar{display:flex;gap:15px;font-size:.9rem;font-weight:500;}
-        .badge{padding:4px 10px;border-radius:4px;color:#fff;font-size:.75rem;font-weight:bold;}
+        .badge{padding:4px 10px;border-radius:4px;color:#fff;font-size:.75rem;font-weight:bold;white-space:nowrap;}
         #response{background:#1e1e1e;color:#d4d4d4;padding:1.5rem;border-radius:8px;min-height:150px;max-height:500px;overflow-y:auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:.92rem;line-height:1.7;}
         #response p{margin:.4em 0;}
         #response h1,#response h2,#response h3,#response h4{color:#e8eaed;margin:.9em 0 .3em;}
@@ -375,11 +397,11 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         .btn-main{padding:12px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;font-size:1rem;}
         .btn-small{padding:5px 10px;background:#5f6368;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.7rem;margin-top:5px;}
         .btn-main:hover,.btn-small:hover{filter:brightness(.9);}
-        .metrics{display:flex;gap:20px;font-size:.75rem;color:var(--text-sec);}
+        .metrics{display:flex;gap:20px;font-size:.75rem;color:var(--text-sec);flex-wrap:wrap;}
         .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#ccc;}
         .status-online{background:var(--gpu);}
         .auth-status{font-size:.7rem;margin-left:10px;font-weight:bold;}
-        .btn-copy{padding:6px 9px;background:#5f6368;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;flex-shrink:0;line-height:1;transition:background .2s;}
+        .btn-copy{padding:5px 8px;background:#5f6368;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:1rem;flex-shrink:0;line-height:1;transition:background .2s;display:inline-flex;align-items:center;justify-content:center;}
         .btn-copy:hover{background:#4a4f54;}
         .btn-copy.copied{background:#2ecc71;}
     </style>
@@ -398,7 +420,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         </div>
         <div style="text-align:right">
             <div id="hwBadge" class="badge" style="background:#95a5a6">Standby</div>
-            <div id="reasoningIndicator" style="font-size:10px;color:#1a73e8;font-weight:bold;margin-top:5px;display:none;">&#x1F9E0; REASONING MODEL</div>
+            <div id="reasoningIndicator" style="font-size:10px;color:#1a73e8;font-weight:bold;margin-top:5px;display:none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
         </div>
     </div>
     <div class="grid-config">
@@ -419,8 +441,8 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         <div class="form-group">
             <label>API Key / Token <button id="testAuthBtn" class="btn-small">Test Auth</button> <span id="authResult" class="auth-status"></span></label>
             <div style="display:flex;gap:5px;align-items:center;">
-                <input type="text" id="apiKey" placeholder="Pegar aquí la API key" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
-                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copiar API Key">📋</button>
+                <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group">
@@ -431,9 +453,9 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
             <label>Model Name</label>
             <div style="display:flex;gap:5px;align-items:center;">
                 <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
-                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copiar nombre del modelo">📋</button>
+                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
                 <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
-                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copiar nombre del modelo" style="display:none">📋</button>
+                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
@@ -445,7 +467,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     <div class="metrics">
         <span>Status: <span class="status-dot" id="statusDot"></span> <span id="statusText">Ready</span></span>
         <span>Latency: <span id="mTotal">-</span></span>
-        <span id="mVram">VRAM: -</span>
+        <span id="mVram">Memory: -</span>
     </div>
     <div id="reasoningOutput" class="reasoning-box"></div>
     <div id="response"><em style="color:#666">Waiting for query...</em></div>
@@ -458,13 +480,13 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     const els={radios:document.getElementsByName('source'),apiUrl:document.getElementById('apiUrl'),apiKey:document.getElementById('apiKey'),contextLen:document.getElementById('contextLen'),modelSelect:document.getElementById('modelSelect'),modelCustom:document.getElementById('modelCustom'),presetGroup:document.getElementById('presetGroup'),providerPreset:document.getElementById('providerPreset'),prompt:document.getElementById('promptInput'),btn:document.getElementById('sendBtn'),testAuthBtn:document.getElementById('testAuthBtn'),authResult:document.getElementById('authResult'),resp:document.getElementById('response'),reasoningBox:document.getElementById('reasoningOutput'),reasoningInd:document.getElementById('reasoningIndicator'),enableReasoning:document.getElementById('enableReasoning'),badge:document.getElementById('hwBadge'),mTotal:document.getElementById('mTotal'),mVram:document.getElementById('mVram'),statusText:document.getElementById('statusText'),statusDot:document.getElementById('statusDot')};
     function saveConfig(){localStorage.setItem(STORAGE.CONFIG,JSON.stringify({source:Array.from(els.radios).find(r=>r.checked).value,url:els.apiUrl.value,key:els.apiKey.value,ctx:els.contextLen.value,reasoning:els.enableReasoning.checked}));}
     function loadConfig(){const sk=window.__OLLAMA_API_KEY__||'';const d=localStorage.getItem(STORAGE.CONFIG);if(!d){if(sk)els.apiKey.value=sk;handleSourceChange();return;}const c=JSON.parse(d);const r=Array.from(els.radios).find(x=>x.value===c.source);if(r)r.checked=true;els.apiUrl.value=c.url||'';els.apiKey.value=c.key||sk;els.contextLen.value=c.ctx||4096;els.enableReasoning.checked=c.reasoning||false;handleSourceChange();}
-    function copyToClipboard(id,btn){const el=document.getElementById(id);const text=el.value;if(!text)return;const orig=btn.textContent;const finish=()=>{btn.textContent='✓';btn.classList.add('copied');setTimeout(()=>{btn.textContent=orig;btn.classList.remove('copied');},1500);};navigator.clipboard.writeText(text).then(finish).catch(()=>{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);finish();});}
+    function copyToClipboard(id,btn){const el=document.getElementById(id);const text=el.value;if(!text)return;const orig=btn.innerHTML;const finish=()=>{btn.innerHTML='<i class="bi bi-check-lg"></i>';btn.classList.add('copied');setTimeout(()=>{btn.innerHTML=orig;btn.classList.remove('copied');},1500);};navigator.clipboard.writeText(text).then(finish).catch(()=>{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);finish();});}
     function handleSourceChange(){const s=Array.from(els.radios).find(r=>r.checked).value;const h=window.location.hostname;const ic=s==='custom';els.presetGroup.style.display=ic?'block':'none';els.modelCustom.style.display=ic?'block':'none';document.getElementById('modelCustomCopyBtn').style.display=ic?'inline-flex':'none';els.modelSelect.style.display=ic?'none':'block';document.getElementById('modelSelectCopyBtn').style.display=ic?'none':'inline-flex';if(s==='docker')els.apiUrl.value=`https://${h}:11443`;else if(s==='native')els.apiUrl.value=`https://${h}:11444`;else if(s==='direct')els.apiUrl.value=`http://${h}:11434`;loadModels();saveConfig();}
-    async function testAuthentication(){const url=els.apiUrl.value;const key=els.apiKey.value;if(!key){els.authResult.innerText='Enter a key first';els.authResult.style.color='orange';return;}els.authResult.innerText='Testing...';els.authResult.style.color='var(--text-sec)';try{const res=await fetch(`${url}/v1/models`,{headers:{'Authorization':`Bearer ${key}`}});if(res.ok){els.authResult.innerText='✓ Key valid';els.authResult.style.color='var(--gpu)';}else{const d=await res.json().catch(()=>({}));els.authResult.innerText=`✗ ${res.status}: ${d.error?.code||'Unauthorized'}`;els.authResult.style.color='red';}}catch(e){els.authResult.innerText='Connection failed';els.authResult.style.color='red';}}
+    async function testAuthentication(){const url=els.apiUrl.value;const key=els.apiKey.value;if(!key){els.authResult.innerText='Enter a key first';els.authResult.style.color='orange';return;}els.authResult.innerText='Testing...';els.authResult.style.color='var(--text-sec)';try{const res=await fetch(`${url}/v1/models`,{headers:{'Authorization':`Bearer ${key}`}});if(res.ok){els.authResult.innerText='[OK] Key valid';els.authResult.style.color='var(--gpu)';}else{const d=await res.json().catch(()=>({}));els.authResult.innerText=`[ERR] ${res.status}: ${d.error?.code||'Unauthorized'}`;els.authResult.style.color='red';}}catch(e){els.authResult.innerText='Connection failed';els.authResult.style.color='red';}}
     async function loadModels(){const s=Array.from(els.radios).find(r=>r.checked).value;if(s==='custom')return;try{const res=await fetch(`${els.apiUrl.value}/api/tags`);const d=await res.json();els.modelSelect.innerHTML=d.models.map(m=>`<option value="${m.name}">${m.name}</option>`).join('');els.statusDot.className='status-dot status-online';els.statusText.innerText='Online';checkReasoningCapability();}catch(e){els.statusDot.className='status-dot';els.statusText.innerText='Offline / Error';}}
     function checkReasoningCapability(){const n=els.modelSelect.value.toLowerCase();els.reasoningInd.style.display=(n.includes('r1')||n.includes('o1')||n.includes('reason'))?'block':'none';}
     async function execute(){const s=Array.from(els.radios).find(r=>r.checked).value;const url=els.apiUrl.value;const model=s==='custom'?els.modelCustom.value:els.modelSelect.value;const prompt=els.prompt.value;if(!prompt||!model)return;localStorage.setItem(STORAGE.LAST_PROMPT,prompt);els.btn.disabled=true;els.resp.innerHTML='<em style="color:#666">Thinking...</em>';els.reasoningBox.style.display='none';const start=performance.now();try{const res=await fetch(`${url}/v1/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':els.apiKey.value?`Bearer ${els.apiKey.value}`:'Bearer ollama'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],max_tokens:parseInt(els.contextLen.value)})});const d=await res.json();const content=d.choices[0].message.content;if(content.includes('<think>')){const parts=content.split('</think>');els.reasoningBox.innerHTML=renderMd(parts[0].replace('<think>','').trim());els.reasoningBox.style.display='block';applyHighlight(els.reasoningBox);els.resp.innerHTML=renderMd(parts[1].trim());}else{els.resp.innerHTML=renderMd(content);}applyHighlight(els.resp);els.mTotal.innerText=`${((performance.now()-start)/1000).toFixed(2)}s`;updateHardwareMetrics();}catch(e){els.resp.innerHTML=`<span style="color:#e74c3c">Error: ${e.message}</span>`;}finally{els.btn.disabled=false;}}
-    async function updateHardwareMetrics(){const s=Array.from(els.radios).find(r=>r.checked).value;if(s==='custom')return;try{const res=await fetch(`${els.apiUrl.value}/api/ps`);const d=await res.json();const m=d.models?.find(x=>els.modelSelect.value.startsWith(x.name));if(m){const p=Math.round((m.size_vram/m.size)*100);els.badge.innerText=p===100?'GPU MODE':(p>0?'HYBRID':'CPU MODE');els.badge.style.background=p===100?'#2ecc71':(p>0?'#9b59b6':'#f39c12');els.mVram.innerText=`VRAM: ${(m.size_vram/1e9).toFixed(2)}GB`;}}catch(e){}}
+    async function updateHardwareMetrics(){const s=Array.from(els.radios).find(r=>r.checked).value;if(s==='custom')return;try{const res=await fetch(`${els.apiUrl.value}/api/ps`);const d=await res.json();const m=d.models?.find(x=>els.modelSelect.value.startsWith(x.name));if(m){const g=m.size_vram||0;const c=(m.size||0)-g;const p=m.size>0?Math.round((g/m.size)*100):0;const gGB=(g/1e9).toFixed(2);const cGB=(c/1e9).toFixed(2);if(p===100){els.badge.textContent=`GPU | ${gGB} GB`;els.badge.style.background='#2ecc71';els.mVram.textContent=`VRAM: ${gGB} GB`;}else if(p>0){els.badge.textContent='HYBRID';els.badge.style.background='#9b59b6';els.mVram.textContent=`VRAM: ${gGB} GB  RAM: ${cGB} GB`;}else{els.badge.textContent=`CPU | ${cGB} GB`;els.badge.style.background='#f39c12';els.mVram.textContent=`RAM: ${cGB} GB`;}}else{els.badge.textContent='Standby';els.badge.style.background='#95a5a6';els.mVram.textContent='Memory: -';}}catch(e){}}
     els.radios.forEach(r=>r.addEventListener('change',handleSourceChange));
     els.providerPreset.addEventListener('change',()=>{els.apiUrl.value=els.providerPreset.value;saveConfig();});
     els.modelSelect.addEventListener('change',checkReasoningCapability);

@@ -179,7 +179,7 @@ exit /b 0
 ::    $bytes = New-Object byte[] 32
 ::    [System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($bytes)
 ::    $key = [System.BitConverter]::ToString($bytes).Replace('-','').ToLower()
-::    Set-Content -Path $envFile -Encoding UTF8 -Value "OLLAMA_API_KEY=$key"
+::    Set-Content -Path $envFile -Encoding UTF8 -Value @("OLLAMA_API_KEY=$key", "OLLAMA_TIMEOUT=10m")
 ::    Write-Host "[INIT] .env created. Use this key in ELO DMS: $key" -ForegroundColor Green
 ::} else {
 ::    Write-Init ".env already exists, skipping key generation."
@@ -221,12 +221,20 @@ exit /b 0
 ::    handle /api/* {
 ::        reverse_proxy ollama:11434 {
 ::            header_down -Access-Control-Allow-Origin
+::            transport http {
+::                response_header_timeout {$OLLAMA_TIMEOUT}
+::                dial_timeout 30s
+::            }
 ::        }
 ::    }
 ::
 ::    handle /v1/* {
 ::        reverse_proxy ollama:11434 {
 ::            header_down -Access-Control-Allow-Origin
+::            transport http {
+::                response_header_timeout {$OLLAMA_TIMEOUT}
+::                dial_timeout 30s
+::            }
 ::        }
 ::    }
 ::
@@ -270,12 +278,20 @@ exit /b 0
 ::    handle /api/* {
 ::        reverse_proxy host.docker.internal:11434 {
 ::            header_down -Access-Control-Allow-Origin
+::            transport http {
+::                response_header_timeout {$OLLAMA_TIMEOUT}
+::                dial_timeout 30s
+::            }
 ::        }
 ::    }
 ::
 ::    handle /v1/* {
 ::        reverse_proxy host.docker.internal:11434 {
 ::            header_down -Access-Control-Allow-Origin
+::            transport http {
+::                response_header_timeout {$OLLAMA_TIMEOUT}
+::                dial_timeout 30s
+::            }
 ::        }
 ::    }
 ::
@@ -313,6 +329,7 @@ exit /b 0
 ::      - "11444:11435"
 ::    environment:
 ::      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+::      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
 ::    volumes:
 ::      - ./config/Caddyfile:/etc/caddy/Caddyfile
 ::      - .:/usr/share/caddy
@@ -351,6 +368,7 @@ exit /b 0
 ::      - "11444:11435"
 ::    environment:
 ::      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+::      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
 ::    volumes:
 ::      - ./config/Caddyfile:/etc/caddy/Caddyfile
 ::      - .:/usr/share/caddy
@@ -384,7 +402,12 @@ exit /b 0
 ::Write-Host "GPU Type: $type" -ForegroundColor Cyan
 ::$src = "config\docker-compose.$type.yml"
 ::if (Test-Path $src) { Copy-Item $src "docker-compose.yml" -Force; Write-Host "docker-compose.yml set for $type" -ForegroundColor Green }
-::else { Write-Error "Template $src not found" }
+::else {
+::    Write-Host "[WARN] Template $src not found. Using hybrid as fallback." -ForegroundColor Yellow
+::    $fb = "config\docker-compose.hybrid.yml"
+::    if (Test-Path $fb) { Copy-Item $fb "docker-compose.yml" -Force; Write-Host "docker-compose.yml set for hybrid (fallback)" -ForegroundColor Green }
+::    else { Write-Host "[WARN] No fallback template found. docker-compose.yml unchanged." -ForegroundColor Yellow }
+::}
 ::'@
 ::}
 ::#endregion
@@ -401,6 +424,7 @@ exit /b 0
 ::    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 ::    <title>Universal AI Console - SSL Aware</title>
 ::    <script>window.__OLLAMA_API_KEY__ = "{{env "OLLAMA_API_KEY"}}";</script>
+::    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 ::    <style>
 ::        :root {
 ::            --bg: #f8f9fa; --card: #ffffff; --primary: #1a73e8;
@@ -444,7 +468,7 @@ exit /b 0
 ::        </div>
 ::        <div style="text-align: right">
 ::            <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
-::            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;">&#x1F9E0; REASONING MODEL</div>
+::            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
 ::        </div>
 ::    </div>
 ::    <div class="grid-config">
@@ -468,8 +492,8 @@ exit /b 0
 ::                <span id="authResult" class="auth-status"></span>
 ::            </label>
 ::            <div style="display:flex;gap:5px;align-items:center;">
-::                <input type="text" id="apiKey" placeholder="Pegar aquí la API key" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
-::                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copiar API Key">📋</button>
+::                <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+::                <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
 ::            </div>
 ::        </div>
 ::        <div class="form-group">
@@ -480,9 +504,9 @@ exit /b 0
 ::            <label>Model Name</label>
 ::            <div style="display:flex;gap:5px;align-items:center;">
 ::                <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
-::                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copiar nombre del modelo">📋</button>
+::                <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
 ::                <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
-::                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copiar nombre del modelo" style="display:none">📋</button>
+::                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
 ::            </div>
 ::        </div>
 ::        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
@@ -494,7 +518,7 @@ exit /b 0
 ::    <div class="metrics">
 ::        <span>Status: <span class="status-dot" id="statusDot"></span> <span id="statusText">Ready</span></span>
 ::        <span>Latency: <span id="mTotal">-</span></span>
-::        <span id="mVram">VRAM: -</span>
+::        <span id="mVram">Memory: -</span>
 ::    </div>
 ::    <div id="reasoningOutput" class="reasoning-box"></div>
 ::    <div id="response">Waiting for query...</div>
@@ -589,11 +613,11 @@ exit /b 0
 ::        try {
 ::            const res = await fetch(`${url}/v1/models`, { headers: { 'Authorization': `Bearer ${key}` } });
 ::            if (res.ok) {
-::                els.authResult.innerText = '✓ Key valid';
+::                els.authResult.innerText = '[OK] Key valid';
 ::                els.authResult.style.color = 'var(--gpu)';
 ::            } else {
 ::                const data = await res.json().catch(() => ({}));
-::                els.authResult.innerText = `✗ ${res.status}: ${data.error?.code || 'Unauthorized'}`;
+::                els.authResult.innerText = `[ERR] ${res.status}: ${data.error?.code || 'Unauthorized'}`;
 ::                els.authResult.style.color = 'red';
 ::            }
 ::        } catch (e) {
@@ -664,10 +688,28 @@ exit /b 0
 ::            const data = await res.json();
 ::            const model = data.models?.find(m => els.modelSelect.value.startsWith(m.name));
 ::            if (model) {
-::                const gpuPct = Math.round((model.size_vram / model.size) * 100);
-::                els.badge.innerText = gpuPct === 100 ? 'GPU MODE' : (gpuPct > 0 ? 'HYBRID' : 'CPU MODE');
-::                els.badge.style.background = gpuPct === 100 ? '#2ecc71' : (gpuPct > 0 ? '#9b59b6' : '#f39c12');
-::                els.mVram.innerText = `VRAM: ${(model.size_vram / 1e9).toFixed(2)}GB`;
+::                const gpuBytes = model.size_vram || 0;
+::                const cpuBytes = (model.size || 0) - gpuBytes;
+::                const gpuPct = model.size > 0 ? Math.round((gpuBytes / model.size) * 100) : 0;
+::                const gpuGB = (gpuBytes / 1e9).toFixed(2);
+::                const cpuGB = (cpuBytes / 1e9).toFixed(2);
+::                if (gpuPct === 100) {
+::                    els.badge.textContent = `GPU | ${gpuGB} GB`;
+::                    els.badge.style.background = '#2ecc71';
+::                    els.mVram.textContent = `VRAM: ${gpuGB} GB`;
+::                } else if (gpuPct > 0) {
+::                    els.badge.textContent = 'HYBRID';
+::                    els.badge.style.background = '#9b59b6';
+::                    els.mVram.textContent = `VRAM: ${gpuGB} GB  RAM: ${cpuGB} GB`;
+::                } else {
+::                    els.badge.textContent = `CPU | ${cpuGB} GB`;
+::                    els.badge.style.background = '#f39c12';
+::                    els.mVram.textContent = `RAM: ${cpuGB} GB`;
+::                }
+::            } else {
+::                els.badge.textContent = 'Standby';
+::                els.badge.style.background = '#95a5a6';
+::                els.mVram.textContent = 'Memory: -';
 ::            }
 ::        } catch (e) {}
 ::    }
