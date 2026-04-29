@@ -1,0 +1,37 @@
+﻿{
+    "VMName":  "ELO25",
+    "Completed":  [
+                      "software-selected",
+                      "nested-virt",
+                      "wsl-features",
+                      "wsl-reboot",
+                      "wsl-install",
+                      "wsl2-default",
+                      "docker-install",
+                      "docker-reboot",
+                      "docker-ready",
+                      "guest-services",
+                      "software-copy"
+                  ],
+    "Models":  [
+                   "deepseek-r1:1.5b"
+               ],
+    "Features":  [
+                     "wsl-ai",
+                     "software"
+                 ],
+    "LocalFiles":  [
+                       "ELO_25_Java_Client_Windows_25_00_031_122.zip",
+                       "ELO_25_Lizenz_2026-03-11 - R(90D7A00C-FC3B-79E9-B9A1-CB95C3959E10).pk",
+                       "Firefox Installer.exe",
+                       "npp.8.9.3.Installer.x64.exe",
+                       "postgresql-18.3-2-windows-x64.exe",
+                       "serversetup2-25.00.002.3581194-windows_signed.zip",
+                       "SQL Server Management Studio_vs_SSMS.exe",
+                       "SQL2025-SSEI-EntDev.exe"
+                   ],
+    "WingetPkgs":  [
+
+                   ],
+    "InstallMode":  "interactive"
+}
