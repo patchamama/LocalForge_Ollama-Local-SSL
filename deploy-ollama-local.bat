@@ -155,7 +155,8 @@ echo   1. Close Firefox completely and reopen it
 echo   2. If that fails: about:config -^> security.enterprise_roots.enabled = true
 echo   3. Root cause: never use "docker compose down -v" -- it regenerates the CA
 echo.
-pause
+echo [INFO] Streaming Caddy logs...
+docker logs -f caddy
 exit /b 0
 
 ::============================================================
@@ -199,6 +200,10 @@ exit /b 0
 ::https://localhost:11434, https://127.0.0.1:11434 {
 ::
 ::    root * /usr/share/caddy
+::    log {
+::        output stdout
+::        format console
+::    }
 ::
 ::    @preflight method OPTIONS
 ::    handle @preflight {
@@ -256,6 +261,10 @@ exit /b 0
 ::https://localhost:11435, https://127.0.0.1:11435 {
 ::
 ::    root * /usr/share/caddy
+::    log {
+::        output stdout
+::        format console
+::    }
 ::
 ::    @preflight method OPTIONS
 ::    handle @preflight {
@@ -567,7 +576,9 @@ exit /b 0
 ::        const r = Array.from(els.radios).find(rad => rad.value === c.source);
 ::        if (r) r.checked = true;
 ::        els.apiUrl.value = c.url || '';
-::        els.apiKey.value = c.key || serverKey;
+::        const source = c.source || 'docker';
+::        const useServerKey = source === 'docker' || source === 'native' || source === 'direct';
+::        els.apiKey.value = useServerKey ? serverKey : (c.key || '');
 ::        els.contextLen.value = c.ctx || 4096;
 ::        els.enableReasoning.checked = c.reasoning || false;
 ::        handleSourceChange();

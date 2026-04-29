@@ -51,6 +51,10 @@ if [ ! -f "$BASEDIR/config/Caddyfile" ]; then
 https://localhost:11434, https://127.0.0.1:11434 {
 
     root * /usr/share/caddy
+    log {
+        output stdout
+        format console
+    }
 
     @preflight method OPTIONS
     handle @preflight {
@@ -108,6 +112,10 @@ https://localhost:11434, https://127.0.0.1:11434 {
 https://localhost:11435, https://127.0.0.1:11435 {
 
     root * /usr/share/caddy
+    log {
+        output stdout
+        format console
+    }
 
     @preflight method OPTIONS
     handle @preflight {
@@ -479,7 +487,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     const STORAGE={CONFIG:'ai_console_config',LAST_PROMPT:'ai_console_prompt'};
     const els={radios:document.getElementsByName('source'),apiUrl:document.getElementById('apiUrl'),apiKey:document.getElementById('apiKey'),contextLen:document.getElementById('contextLen'),modelSelect:document.getElementById('modelSelect'),modelCustom:document.getElementById('modelCustom'),presetGroup:document.getElementById('presetGroup'),providerPreset:document.getElementById('providerPreset'),prompt:document.getElementById('promptInput'),btn:document.getElementById('sendBtn'),testAuthBtn:document.getElementById('testAuthBtn'),authResult:document.getElementById('authResult'),resp:document.getElementById('response'),reasoningBox:document.getElementById('reasoningOutput'),reasoningInd:document.getElementById('reasoningIndicator'),enableReasoning:document.getElementById('enableReasoning'),badge:document.getElementById('hwBadge'),mTotal:document.getElementById('mTotal'),mVram:document.getElementById('mVram'),statusText:document.getElementById('statusText'),statusDot:document.getElementById('statusDot')};
     function saveConfig(){localStorage.setItem(STORAGE.CONFIG,JSON.stringify({source:Array.from(els.radios).find(r=>r.checked).value,url:els.apiUrl.value,key:els.apiKey.value,ctx:els.contextLen.value,reasoning:els.enableReasoning.checked}));}
-    function loadConfig(){const sk=window.__OLLAMA_API_KEY__||'';const d=localStorage.getItem(STORAGE.CONFIG);if(!d){if(sk)els.apiKey.value=sk;handleSourceChange();return;}const c=JSON.parse(d);const r=Array.from(els.radios).find(x=>x.value===c.source);if(r)r.checked=true;els.apiUrl.value=c.url||'';els.apiKey.value=c.key||sk;els.contextLen.value=c.ctx||4096;els.enableReasoning.checked=c.reasoning||false;handleSourceChange();}
+    function loadConfig(){const sk=window.__OLLAMA_API_KEY__||'';const d=localStorage.getItem(STORAGE.CONFIG);if(!d){if(sk)els.apiKey.value=sk;handleSourceChange();return;}const c=JSON.parse(d);const r=Array.from(els.radios).find(x=>x.value===c.source);if(r)r.checked=true;els.apiUrl.value=c.url||'';const s=c.source||'docker';const useServerKey=s==='docker'||s==='native'||s==='direct';els.apiKey.value=useServerKey?sk:(c.key||'');els.contextLen.value=c.ctx||4096;els.enableReasoning.checked=c.reasoning||false;handleSourceChange();}
     function copyToClipboard(id,btn){const el=document.getElementById(id);const text=el.value;if(!text)return;const orig=btn.innerHTML;const finish=()=>{btn.innerHTML='<i class="bi bi-check-lg"></i>';btn.classList.add('copied');setTimeout(()=>{btn.innerHTML=orig;btn.classList.remove('copied');},1500);};navigator.clipboard.writeText(text).then(finish).catch(()=>{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);finish();});}
     function handleSourceChange(){const s=Array.from(els.radios).find(r=>r.checked).value;const h=window.location.hostname;const ic=s==='custom';els.presetGroup.style.display=ic?'block':'none';els.modelCustom.style.display=ic?'block':'none';document.getElementById('modelCustomCopyBtn').style.display=ic?'inline-flex':'none';els.modelSelect.style.display=ic?'none':'block';document.getElementById('modelSelectCopyBtn').style.display=ic?'none':'inline-flex';if(s==='docker')els.apiUrl.value=`https://${h}:11443`;else if(s==='native')els.apiUrl.value=`https://${h}:11444`;else if(s==='direct')els.apiUrl.value=`http://${h}:11434`;loadModels();saveConfig();}
     async function testAuthentication(){const url=els.apiUrl.value;const key=els.apiKey.value;if(!key){els.authResult.innerText='Enter a key first';els.authResult.style.color='orange';return;}els.authResult.innerText='Testing...';els.authResult.style.color='var(--text-sec)';try{const res=await fetch(`${url}/v1/models`,{headers:{'Authorization':`Bearer ${key}`}});if(res.ok){els.authResult.innerText='[OK] Key valid';els.authResult.style.color='var(--gpu)';}else{const d=await res.json().catch(()=>({}));els.authResult.innerText=`[ERR] ${res.status}: ${d.error?.code||'Unauthorized'}`;els.authResult.style.color='red';}}catch(e){els.authResult.innerText='Connection failed';els.authResult.style.color='red';}}
@@ -808,3 +816,5 @@ echo "    1. Restart Firefox completely."
 echo "    2. If it persists: about:config > security.enterprise_roots.enabled = true"
 echo "    3. Never run 'docker compose down -v' — it regenerates the Caddy CA."
 echo ""
+info "Streaming Caddy logs..."
+docker logs -f caddy

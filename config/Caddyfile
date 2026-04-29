@@ -6,6 +6,10 @@
 https://localhost:11434, https://127.0.0.1:11434 {
 
     root * /usr/share/caddy
+    log {
+        output stdout
+        format console
+    }
 
     # CORS preflight — sin auth
     @preflight method OPTIONS
@@ -65,6 +69,10 @@ https://localhost:11434, https://127.0.0.1:11434 {
 https://localhost:11435, https://127.0.0.1:11435 {
 
     root * /usr/share/caddy
+    log {
+        output stdout
+        format console
+    }
 
     @preflight method OPTIONS
     handle @preflight {

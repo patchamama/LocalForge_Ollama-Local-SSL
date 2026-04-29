@@ -196,7 +196,9 @@
         const r = Array.from(els.radios).find(rad => rad.value === c.source);
         if (r) r.checked = true;
         els.apiUrl.value = c.url || '';
-        els.apiKey.value = c.key || serverKey;
+        const source = c.source || 'docker';
+        const useServerKey = source === 'docker' || source === 'native' || source === 'direct';
+        els.apiKey.value = useServerKey ? serverKey : (c.key || '');
         els.contextLen.value = c.ctx || 4096;
         els.enableReasoning.checked = c.reasoning || false;
         handleSourceChange();
