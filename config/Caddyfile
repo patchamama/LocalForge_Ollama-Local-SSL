@@ -14,7 +14,7 @@ https://localhost:11434, https://127.0.0.1:11434 {
     # CORS preflight — sin auth
     @preflight method OPTIONS
     handle @preflight {
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
         header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         respond "" 204
@@ -27,7 +27,7 @@ https://localhost:11434, https://127.0.0.1:11434 {
     }
     handle @unauthorized {
         header Content-Type "application/json"
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
     }
 
@@ -57,7 +57,7 @@ https://localhost:11434, https://127.0.0.1:11434 {
     }
 
     header {
-        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         Access-Control-Allow-Methods "GET, POST, OPTIONS"
         Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
     }
@@ -76,7 +76,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
 
     @preflight method OPTIONS
     handle @preflight {
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
         header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         respond "" 204
@@ -88,7 +88,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
     }
     handle @unauthorized {
         header Content-Type "application/json"
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
     }
 
@@ -118,7 +118,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
     }
 
     header {
-        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         Access-Control-Allow-Methods "GET, POST, OPTIONS"
         Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
     }

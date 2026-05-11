@@ -18,6 +18,17 @@ ok()    { echo -e "${GRN}[ OK ]${NC} $*"; }
 warn()  { echo -e "${YEL}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}[ERR ]${NC} $*"; }
 
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local file="$BASEDIR/.env"
+    if grep -q "^${key}=" "$file"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$file"
+    fi
+}
+
 # =============================================================================
 # STEP 0 — Generate missing config / tool files
 # =============================================================================
@@ -56,21 +67,23 @@ https://localhost:11434, https://127.0.0.1:11434 {
         format console
     }
 
+    # CORS preflight — sin auth
     @preflight method OPTIONS
     handle @preflight {
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
         header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         respond "" 204
     }
 
+    # Bearer auth para /v1/* (OpenAI-compatible endpoints)
     @unauthorized {
         not header Authorization "Bearer {env.OLLAMA_API_KEY}"
         path /v1/*
     }
     handle @unauthorized {
         header Content-Type "application/json"
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
     }
 
@@ -100,7 +113,7 @@ https://localhost:11434, https://127.0.0.1:11434 {
     }
 
     header {
-        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         Access-Control-Allow-Methods "GET, POST, OPTIONS"
         Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
     }
@@ -119,7 +132,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
 
     @preflight method OPTIONS
     handle @preflight {
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
         header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         respond "" 204
@@ -131,7 +144,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
     }
     handle @unauthorized {
         header Content-Type "application/json"
-        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         respond `{"error":{"message":"Incorrect API key provided. Verify the key used matches the configured OLLAMA_API_KEY.","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}` 401
     }
 
@@ -161,7 +174,7 @@ https://localhost:11435, https://127.0.0.1:11435 {
     }
 
     header {
-        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Origin "{env.OLLAMA_ORIGINS}"
         Access-Control-Allow-Methods "GET, POST, OPTIONS"
         Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
     }
@@ -188,6 +201,7 @@ services:
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -225,6 +239,7 @@ services:
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -258,14 +273,13 @@ services:
     image: caddy:latest
     container_name: caddy
     restart: always
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "11443:11434"
-      - "11444:11435"
+      - "443:443"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -298,14 +312,13 @@ services:
     image: caddy:latest
     container_name: caddy
     restart: always
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "11443:11434"
-      - "11444:11435"
+      - "443:443"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -335,14 +348,13 @@ services:
     image: caddy:latest
     container_name: caddy
     restart: always
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "11443:11434"
-      - "11444:11435"
+      - "443:443"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
@@ -372,46 +384,79 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <style>
-        :root{--bg:#f8f9fa;--card:#fff;--primary:#1a73e8;--gpu:#2ecc71;--cpu:#f39c12;--hybrid:#9b59b6;--text:#202124;--text-sec:#5f6368;}
-        body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:20px;display:flex;justify-content:center;}
-        .container{background:var(--card);padding:2rem;border-radius:16px;box-shadow:0 4px 25px rgba(0,0,0,.1);width:100%;max-width:900px;display:flex;flex-direction:column;gap:1rem;}
-        .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #eee;padding-bottom:1rem;}
-        .grid-config{display:grid;grid-template-columns:1fr 1fr;gap:15px;background:#f1f3f4;padding:15px;border-radius:10px;}
-        .form-group{display:flex;flex-direction:column;gap:5px;}
-        label{font-weight:600;font-size:.85rem;color:var(--text-sec);}
-        input,select,textarea{padding:10px;border:1px solid #dadce0;border-radius:6px;font-size:.95rem;}
-        .source-bar{display:flex;gap:15px;font-size:.9rem;font-weight:500;}
-        .badge{padding:4px 10px;border-radius:4px;color:#fff;font-size:.75rem;font-weight:bold;white-space:nowrap;}
-        #response{background:#1e1e1e;color:#d4d4d4;padding:1.5rem;border-radius:8px;min-height:150px;max-height:500px;overflow-y:auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:.92rem;line-height:1.7;}
-        #response p{margin:.4em 0;}
-        #response h1,#response h2,#response h3,#response h4{color:#e8eaed;margin:.9em 0 .3em;}
-        #response h1{font-size:1.3em;border-bottom:1px solid #3c3c3c;padding-bottom:.2em;}
-        #response h2{font-size:1.15em;}#response h3{font-size:1em;}
-        #response code{background:#2d2d2d;padding:2px 6px;border-radius:3px;font-family:'Fira Code','Consolas',monospace;font-size:.85em;color:#f8f8f2;}
-        #response pre{background:#2d2d2d;padding:1em;border-radius:6px;overflow-x:auto;margin:.7em 0;}
-        #response pre code{background:none;padding:0;}
-        #response ul,#response ol{padding-left:1.6em;margin:.4em 0;}
-        #response li{margin:.25em 0;}
-        #response blockquote{border-left:3px solid #8ab4f8;margin:.5em 0;padding:.3em 0 .3em 1em;color:#9aa0a6;}
-        #response table{border-collapse:collapse;width:100%;margin:.7em 0;font-size:.88em;}
-        #response th,#response td{border:1px solid #3c3c3c;padding:6px 10px;text-align:left;}
-        #response th{background:#2d2d2d;color:#e8eaed;}
-        #response a{color:#8ab4f8;text-decoration:none;}
-        #response strong{color:#e8eaed;}
-        #response hr{border:none;border-top:1px solid #3c3c3c;margin:1em 0;}
-        .reasoning-box{background:#2d2d2d;color:#8ab4f8;padding:10px 14px;border-radius:5px;margin-bottom:10px;font-size:.85rem;border-left:3px solid #8ab4f8;display:none;line-height:1.6;max-height:200px;overflow-y:auto;}
-        .reasoning-box p{margin:.3em 0;}
-        .reasoning-box code{background:#3c3c3c;padding:1px 4px;border-radius:3px;font-size:.82em;}
-        .btn-main{padding:12px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;font-size:1rem;}
-        .btn-small{padding:5px 10px;background:#5f6368;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.7rem;margin-top:5px;}
-        .btn-main:hover,.btn-small:hover{filter:brightness(.9);}
-        .metrics{display:flex;gap:20px;font-size:.75rem;color:var(--text-sec);flex-wrap:wrap;}
-        .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#ccc;}
-        .status-online{background:var(--gpu);}
-        .auth-status{font-size:.7rem;margin-left:10px;font-weight:bold;}
-        .btn-copy{padding:5px 8px;background:#5f6368;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:1rem;flex-shrink:0;line-height:1;transition:background .2s;display:inline-flex;align-items:center;justify-content:center;}
-        .btn-copy:hover{background:#4a4f54;}
-        .btn-copy.copied{background:#2ecc71;}
+        :root {
+            --bg: #f8f9fa; --card: #ffffff; --primary: #1a73e8;
+            --gpu: #2ecc71; --cpu: #f39c12; --hybrid: #9b59b6;
+            --text: #202124; --text-sec: #5f6368;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: var(--card); padding: 2rem; border-radius: 16px; box-shadow: 0 4px 25px rgba(0,0,0,0.1); width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 1rem; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
+        .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f1f3f4; padding: 15px; border-radius: 10px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-weight: 600; font-size: 0.85rem; color: var(--text-sec); }
+        input, select, textarea { padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 0.95rem; }
+        .source-bar { display: flex; gap: 15px; font-size: 0.9rem; font-weight: 500; }
+        .badge { padding: 4px 10px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; white-space: nowrap; }
+
+        #response {
+            background: #1e1e1e; color: #d4d4d4; padding: 1.5rem; border-radius: 8px;
+            min-height: 150px; max-height: 500px; overflow-y: auto;
+            font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.92rem; line-height: 1.7;
+        }
+        #response p { margin: 0.4em 0; }
+        #response h1, #response h2, #response h3, #response h4 { color: #e8eaed; margin: 0.9em 0 0.3em; }
+        #response h1 { font-size: 1.3em; border-bottom: 1px solid #3c3c3c; padding-bottom: 0.2em; }
+        #response h2 { font-size: 1.15em; }
+        #response h3 { font-size: 1em; }
+        #response code { background: #2d2d2d; padding: 2px 6px; border-radius: 3px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.85em; color: #f8f8f2; }
+        #response pre { background: #2d2d2d; padding: 1em; border-radius: 6px; overflow-x: auto; margin: 0.7em 0; }
+        #response pre code { background: none; padding: 0; font-size: 0.85em; }
+        #response ul, #response ol { padding-left: 1.6em; margin: 0.4em 0; }
+        #response li { margin: 0.25em 0; }
+        #response blockquote { border-left: 3px solid #8ab4f8; margin: 0.5em 0; padding: 0.3em 0 0.3em 1em; color: #9aa0a6; }
+        #response table { border-collapse: collapse; width: 100%; margin: 0.7em 0; font-size: 0.88em; }
+        #response th, #response td { border: 1px solid #3c3c3c; padding: 6px 10px; text-align: left; }
+        #response th { background: #2d2d2d; color: #e8eaed; }
+        #response a { color: #8ab4f8; text-decoration: none; }
+        #response a:hover { text-decoration: underline; }
+        #response strong { color: #e8eaed; }
+        #response hr { border: none; border-top: 1px solid #3c3c3c; margin: 1em 0; }
+
+        .reasoning-box {
+            background: #2d2d2d; color: #8ab4f8; padding: 10px 14px; border-radius: 5px;
+            margin-bottom: 10px; font-size: 0.85rem; border-left: 3px solid #8ab4f8; display: none;
+            line-height: 1.6; max-height: 200px; overflow-y: auto;
+        }
+        .reasoning-box p { margin: 0.3em 0; }
+        .reasoning-box code { background: #3c3c3c; padding: 1px 4px; border-radius: 3px; font-size: 0.82em; }
+
+        .btn-main { padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn-small { padding: 5px 10px; background: #5f6368; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; margin-top: 5px; }
+        .btn-main:hover, .btn-small:hover { filter: brightness(0.9); }
+        .metrics { display: flex; gap: 20px; font-size: 0.75rem; color: var(--text-sec); flex-wrap: wrap; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #ccc; }
+        .status-online { background: var(--gpu); }
+        .auth-status { font-size: 0.7rem; margin-left: 10px; font-weight: bold; }
+        .btn-copy { padding: 5px 8px; background: #5f6368; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; flex-shrink: 0; line-height: 1; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-copy:hover { background: #4a4f54; }
+        .btn-copy.copied { background: #2ecc71; }
+        .tester-wrap { margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+        .tester-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tester-tab-btn { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #eef2ff; color: #1e3a8a; font-weight: 700; cursor: pointer; }
+        .tester-tab-btn.active { background: #dbeafe; border-color: #93c5fd; }
+        .tester-panel { display: none; margin-top: 10px; }
+        .tester-panel.active { display: block; }
+        .tester-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        .btn-alt { padding: 10px 12px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; color: #fff; background: #374151; }
+        .mono { font-family: 'Fira Code', 'Consolas', monospace; }
+        .tester-response {
+            background: #111827; color: #e5e7eb; border-radius: 8px; border: 1px solid #0f172a;
+            min-height: 130px; max-height: 380px; overflow: auto; padding: 12px; white-space: pre-wrap;
+            font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.84rem;
+        }
+        @media (max-width: 900px) { .tester-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -426,9 +471,9 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
                 <label><input type="radio" name="source" value="custom"> SaaS / Custom</label>
             </div>
         </div>
-        <div style="text-align:right">
-            <div id="hwBadge" class="badge" style="background:#95a5a6">Standby</div>
-            <div id="reasoningIndicator" style="font-size:10px;color:#1a73e8;font-weight:bold;margin-top:5px;display:none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
+        <div style="text-align: right">
+            <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
+            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
         </div>
     </div>
     <div class="grid-config">
@@ -447,7 +492,10 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
             <input type="text" id="apiUrl" placeholder="https://localhost:11443">
         </div>
         <div class="form-group">
-            <label>API Key / Token <button id="testAuthBtn" class="btn-small">Test Auth</button> <span id="authResult" class="auth-status"></span></label>
+            <label>API Key / Token
+                <button id="testAuthBtn" class="btn-small">Test Auth</button>
+                <span id="authResult" class="auth-status"></span>
+            </label>
             <div style="display:flex;gap:5px;align-items:center;">
                 <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
                 <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
@@ -466,7 +514,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
                 <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
-        <div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
             <label><input type="checkbox" id="enableReasoning"> Enable Reasoning Mode</label>
         </div>
     </div>
@@ -479,28 +527,501 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     </div>
     <div id="reasoningOutput" class="reasoning-box"></div>
     <div id="response"><em style="color:#666">Waiting for query...</em></div>
+
+    <div class="tester-wrap">
+        <h3 style="margin:0 0 6px 0">API Testing Tabs</h3>
+        <div class="tester-tabs">
+            <button class="tester-tab-btn active" data-tester-tab="endpointPanel">Endpoint Tester</button>
+            <button class="tester-tab-btn" data-tester-tab="jsonPanel">JSON Request Tester</button>
+        </div>
+
+        <div class="tester-panel active" id="endpointPanel">
+            <div class="tester-grid">
+                <div class="form-group">
+                    <label>Quick Endpoint</label>
+                    <select id="endpointSelect">
+                        <option value="/v1/models|GET">/v1/models (GET)</option>
+                        <option value="/api/tags|GET">/api/tags (GET)</option>
+                        <option value="/api/ps|GET">/api/ps (GET)</option>
+                        <option value="/api/version|GET">/api/version (GET)</option>
+                        <option value="/api/show|POST">/api/show (POST)</option>
+                        <option value="/v1/chat/completions|POST">/v1/chat/completions (POST)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>HTTP Method</label>
+                    <select id="endpointMethod">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="OPTIONS">OPTIONS</option>
+                    </select>
+                </div>
+            </div>
+            <div class="tester-grid">
+                <div class="form-group">
+                    <label>Path Override (optional)</label>
+                    <input type="text" id="endpointPathOverride" placeholder="/api/tags">
+                </div>
+                <div class="form-group">
+                    <label>Origin Header for CORS test (optional)</label>
+                    <input type="text" id="corsOriginInput" placeholder="https://myapp.local">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Body JSON (used for POST/OPTIONS when provided)</label>
+                <textarea id="endpointBodyInput" class="mono" rows="7"></textarea>
+            </div>
+            <div class="btn-row">
+                <button class="btn-main" id="runEndpointBtn">Run Endpoint Request</button>
+                <button class="btn-alt" id="copyEndpointCurlBtn">Copy curl</button>
+            </div>
+            <div class="form-group">
+                <label>Generated curl</label>
+                <textarea id="endpointCurlOutput" class="mono" rows="4" readonly></textarea>
+            </div>
+            <div class="form-group">
+                <label>Endpoint Response</label>
+                <div id="endpointResponse" class="tester-response">Waiting for request...</div>
+            </div>
+        </div>
+
+        <div class="tester-panel" id="jsonPanel">
+            <div class="form-group">
+                <label>JSON Request Template</label>
+                <select id="jsonTemplateSelect">
+                    <option value="models">Template: /v1/models</option>
+                    <option value="tags">Template: /api/tags</option>
+                    <option value="ps">Template: /api/ps</option>
+                    <option value="show">Template: /api/show</option>
+                    <option value="completions">Template: /v1/chat/completions</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Editable JSON Request</label>
+                <textarea id="jsonRequestInput" class="mono" rows="14"></textarea>
+            </div>
+            <div class="btn-row">
+                <button class="btn-main" id="runJsonRequestBtn">Run JSON Request</button>
+                <button class="btn-alt" id="copyJsonCurlBtn">Copy curl</button>
+            </div>
+            <div class="form-group">
+                <label>Generated curl</label>
+                <textarea id="jsonCurlOutput" class="mono" rows="4" readonly></textarea>
+            </div>
+            <div class="form-group">
+                <label>JSON Tester Response</label>
+                <div id="jsonResponse" class="tester-response">Waiting for request...</div>
+            </div>
+        </div>
+    </div>
 </div>
+
 <script>
-    marked.use({gfm:true,breaks:true});
-    function renderMd(t){return t?marked.parse(t):'';}
-    function applyHighlight(c){c.querySelectorAll('pre code').forEach(el=>hljs.highlightElement(el));}
-    const STORAGE={CONFIG:'ai_console_config',LAST_PROMPT:'ai_console_prompt'};
-    const els={radios:document.getElementsByName('source'),apiUrl:document.getElementById('apiUrl'),apiKey:document.getElementById('apiKey'),contextLen:document.getElementById('contextLen'),modelSelect:document.getElementById('modelSelect'),modelCustom:document.getElementById('modelCustom'),presetGroup:document.getElementById('presetGroup'),providerPreset:document.getElementById('providerPreset'),prompt:document.getElementById('promptInput'),btn:document.getElementById('sendBtn'),testAuthBtn:document.getElementById('testAuthBtn'),authResult:document.getElementById('authResult'),resp:document.getElementById('response'),reasoningBox:document.getElementById('reasoningOutput'),reasoningInd:document.getElementById('reasoningIndicator'),enableReasoning:document.getElementById('enableReasoning'),badge:document.getElementById('hwBadge'),mTotal:document.getElementById('mTotal'),mVram:document.getElementById('mVram'),statusText:document.getElementById('statusText'),statusDot:document.getElementById('statusDot')};
-    function saveConfig(){localStorage.setItem(STORAGE.CONFIG,JSON.stringify({source:Array.from(els.radios).find(r=>r.checked).value,url:els.apiUrl.value,key:els.apiKey.value,ctx:els.contextLen.value,reasoning:els.enableReasoning.checked}));}
-    function loadConfig(){const sk=window.__OLLAMA_API_KEY__||'';const d=localStorage.getItem(STORAGE.CONFIG);if(!d){if(sk)els.apiKey.value=sk;handleSourceChange();return;}const c=JSON.parse(d);const r=Array.from(els.radios).find(x=>x.value===c.source);if(r)r.checked=true;els.apiUrl.value=c.url||'';const s=c.source||'docker';const useServerKey=s==='docker'||s==='native'||s==='direct';els.apiKey.value=useServerKey?sk:(c.key||'');els.contextLen.value=c.ctx||4096;els.enableReasoning.checked=c.reasoning||false;handleSourceChange();}
-    function copyToClipboard(id,btn){const el=document.getElementById(id);const text=el.value;if(!text)return;const orig=btn.innerHTML;const finish=()=>{btn.innerHTML='<i class="bi bi-check-lg"></i>';btn.classList.add('copied');setTimeout(()=>{btn.innerHTML=orig;btn.classList.remove('copied');},1500);};navigator.clipboard.writeText(text).then(finish).catch(()=>{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);finish();});}
-    function handleSourceChange(){const s=Array.from(els.radios).find(r=>r.checked).value;const h=window.location.hostname;const ic=s==='custom';els.presetGroup.style.display=ic?'block':'none';els.modelCustom.style.display=ic?'block':'none';document.getElementById('modelCustomCopyBtn').style.display=ic?'inline-flex':'none';els.modelSelect.style.display=ic?'none':'block';document.getElementById('modelSelectCopyBtn').style.display=ic?'none':'inline-flex';if(s==='docker')els.apiUrl.value=`https://${h}:11443`;else if(s==='native')els.apiUrl.value=`https://${h}:11444`;else if(s==='direct')els.apiUrl.value=`http://${h}:11434`;loadModels();saveConfig();}
-    async function testAuthentication(){const url=els.apiUrl.value;const key=els.apiKey.value;if(!key){els.authResult.innerText='Enter a key first';els.authResult.style.color='orange';return;}els.authResult.innerText='Testing...';els.authResult.style.color='var(--text-sec)';try{const res=await fetch(`${url}/v1/models`,{headers:{'Authorization':`Bearer ${key}`}});if(res.ok){els.authResult.innerText='[OK] Key valid';els.authResult.style.color='var(--gpu)';}else{const d=await res.json().catch(()=>({}));els.authResult.innerText=`[ERR] ${res.status}: ${d.error?.code||'Unauthorized'}`;els.authResult.style.color='red';}}catch(e){els.authResult.innerText='Connection failed';els.authResult.style.color='red';}}
-    async function loadModels(){const s=Array.from(els.radios).find(r=>r.checked).value;if(s==='custom')return;try{const res=await fetch(`${els.apiUrl.value}/api/tags`);const d=await res.json();els.modelSelect.innerHTML=d.models.map(m=>`<option value="${m.name}">${m.name}</option>`).join('');els.statusDot.className='status-dot status-online';els.statusText.innerText='Online';checkReasoningCapability();}catch(e){els.statusDot.className='status-dot';els.statusText.innerText='Offline / Error';}}
-    function checkReasoningCapability(){const n=els.modelSelect.value.toLowerCase();els.reasoningInd.style.display=(n.includes('r1')||n.includes('o1')||n.includes('reason'))?'block':'none';}
-    async function execute(){const s=Array.from(els.radios).find(r=>r.checked).value;const url=els.apiUrl.value;const model=s==='custom'?els.modelCustom.value:els.modelSelect.value;const prompt=els.prompt.value;if(!prompt||!model)return;localStorage.setItem(STORAGE.LAST_PROMPT,prompt);els.btn.disabled=true;els.resp.innerHTML='<em style="color:#666">Thinking...</em>';els.reasoningBox.style.display='none';const start=performance.now();try{const res=await fetch(`${url}/v1/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':els.apiKey.value?`Bearer ${els.apiKey.value}`:'Bearer ollama'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],max_tokens:parseInt(els.contextLen.value)})});const d=await res.json();const content=d.choices[0].message.content;if(content.includes('<think>')){const parts=content.split('</think>');els.reasoningBox.innerHTML=renderMd(parts[0].replace('<think>','').trim());els.reasoningBox.style.display='block';applyHighlight(els.reasoningBox);els.resp.innerHTML=renderMd(parts[1].trim());}else{els.resp.innerHTML=renderMd(content);}applyHighlight(els.resp);els.mTotal.innerText=`${((performance.now()-start)/1000).toFixed(2)}s`;updateHardwareMetrics();}catch(e){els.resp.innerHTML=`<span style="color:#e74c3c">Error: ${e.message}</span>`;}finally{els.btn.disabled=false;}}
-    async function updateHardwareMetrics(){const s=Array.from(els.radios).find(r=>r.checked).value;if(s==='custom')return;try{const res=await fetch(`${els.apiUrl.value}/api/ps`);const d=await res.json();const m=d.models?.find(x=>els.modelSelect.value.startsWith(x.name));if(m){const g=m.size_vram||0;const c=(m.size||0)-g;const p=m.size>0?Math.round((g/m.size)*100):0;const gGB=(g/1e9).toFixed(2);const cGB=(c/1e9).toFixed(2);if(p===100){els.badge.textContent=`GPU | ${gGB} GB`;els.badge.style.background='#2ecc71';els.mVram.textContent=`VRAM: ${gGB} GB`;}else if(p>0){els.badge.textContent='HYBRID';els.badge.style.background='#9b59b6';els.mVram.textContent=`VRAM: ${gGB} GB  RAM: ${cGB} GB`;}else{els.badge.textContent=`CPU | ${cGB} GB`;els.badge.style.background='#f39c12';els.mVram.textContent=`RAM: ${cGB} GB`;}}else{els.badge.textContent='Standby';els.badge.style.background='#95a5a6';els.mVram.textContent='Memory: -';}}catch(e){}}
-    els.radios.forEach(r=>r.addEventListener('change',handleSourceChange));
-    els.providerPreset.addEventListener('change',()=>{els.apiUrl.value=els.providerPreset.value;saveConfig();});
-    els.modelSelect.addEventListener('change',checkReasoningCapability);
-    els.btn.addEventListener('click',execute);
-    els.testAuthBtn.addEventListener('click',testAuthentication);
-    window.onload=()=>{loadConfig();els.prompt.value=localStorage.getItem(STORAGE.LAST_PROMPT)||'';setInterval(updateHardwareMetrics,5000);};
+    marked.use({ gfm: true, breaks: true });
+
+    function renderMd(text) {
+        if (!text) return '';
+        return marked.parse(text);
+    }
+
+    function applyHighlight(container) {
+        container.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    }
+
+    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt' };
+    const API_TESTER_EXAMPLES = {
+        models: { path: '/v1/models', method: 'GET' },
+        tags: { path: '/api/tags', method: 'GET' },
+        ps: { path: '/api/ps', method: 'GET' },
+        show: { path: '/api/show', method: 'POST', body: { model: 'llama3.2' } },
+        completions: {
+            path: '/v1/chat/completions',
+            method: 'POST',
+            body: {
+                model: 'llama3.2',
+                messages: [{ role: 'user', content: 'Hello from API tester' }],
+                max_tokens: 256
+            }
+        }
+    };
+    const els = {
+        radios: document.getElementsByName('source'),
+        apiUrl: document.getElementById('apiUrl'),
+        apiKey: document.getElementById('apiKey'),
+        contextLen: document.getElementById('contextLen'),
+        modelSelect: document.getElementById('modelSelect'),
+        modelCustom: document.getElementById('modelCustom'),
+        presetGroup: document.getElementById('presetGroup'),
+        providerPreset: document.getElementById('providerPreset'),
+        prompt: document.getElementById('promptInput'),
+        btn: document.getElementById('sendBtn'),
+        testAuthBtn: document.getElementById('testAuthBtn'),
+        authResult: document.getElementById('authResult'),
+        resp: document.getElementById('response'),
+        reasoningBox: document.getElementById('reasoningOutput'),
+        reasoningInd: document.getElementById('reasoningIndicator'),
+        enableReasoning: document.getElementById('enableReasoning'),
+        badge: document.getElementById('hwBadge'),
+        mTotal: document.getElementById('mTotal'),
+        mVram: document.getElementById('mVram'),
+        statusText: document.getElementById('statusText'),
+        statusDot: document.getElementById('statusDot'),
+        testerTabs: document.querySelectorAll('.tester-tab-btn'),
+        testerPanels: document.querySelectorAll('.tester-panel'),
+        endpointSelect: document.getElementById('endpointSelect'),
+        endpointMethod: document.getElementById('endpointMethod'),
+        endpointPathOverride: document.getElementById('endpointPathOverride'),
+        corsOriginInput: document.getElementById('corsOriginInput'),
+        endpointBodyInput: document.getElementById('endpointBodyInput'),
+        runEndpointBtn: document.getElementById('runEndpointBtn'),
+        copyEndpointCurlBtn: document.getElementById('copyEndpointCurlBtn'),
+        endpointCurlOutput: document.getElementById('endpointCurlOutput'),
+        endpointResponse: document.getElementById('endpointResponse'),
+        jsonTemplateSelect: document.getElementById('jsonTemplateSelect'),
+        jsonRequestInput: document.getElementById('jsonRequestInput'),
+        runJsonRequestBtn: document.getElementById('runJsonRequestBtn'),
+        copyJsonCurlBtn: document.getElementById('copyJsonCurlBtn'),
+        jsonCurlOutput: document.getElementById('jsonCurlOutput'),
+        jsonResponse: document.getElementById('jsonResponse')
+    };
+
+    function toPrettyJson(value) {
+        return JSON.stringify(value, null, 2);
+    }
+
+    function shellEscapeSingle(value) {
+        return `'${String(value).replace(/'/g, `'\\''`)}'`;
+    }
+
+    function buildCurl(url, method, headers, body) {
+        const cmd = ['curl -k -sS'];
+        cmd.push(`-X ${method}`);
+        Object.entries(headers).forEach(([k, v]) => cmd.push(`-H ${shellEscapeSingle(`${k}: ${v}`)}`));
+        if (body !== undefined && body !== null && method !== 'GET') {
+            const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+            cmd.push(`--data ${shellEscapeSingle(bodyText)}`);
+        }
+        cmd.push(shellEscapeSingle(url));
+        return cmd.join(' ');
+    }
+
+    function renderApiResponse(container, payload) {
+        if (typeof payload === 'string') {
+            container.textContent = payload;
+            return;
+        }
+        container.textContent = toPrettyJson(payload);
+    }
+
+    async function runApiRequest(path, method, body, origin, responseContainer, curlContainer) {
+        const url = `${els.apiUrl.value}${path}`;
+        const headers = {};
+        if (els.apiKey.value) headers.Authorization = `Bearer ${els.apiKey.value}`;
+        if (origin) headers.Origin = origin;
+        if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json';
+
+        const curlCmd = buildCurl(url, method, headers, body);
+        if (curlContainer) curlContainer.value = curlCmd;
+        responseContainer.textContent = 'Waiting for response...';
+
+        const options = { method, headers };
+        if (body !== undefined && body !== null && method !== 'GET' && method !== 'OPTIONS') {
+            options.body = typeof body === 'string' ? body : JSON.stringify(body);
+        }
+
+        try {
+            const response = await fetch(url, options);
+            const text = await response.text();
+            let data;
+            try { data = JSON.parse(text); } catch { data = text; }
+            renderApiResponse(responseContainer, {
+                status: response.status,
+                status_text: response.statusText,
+                path,
+                method,
+                data
+            });
+        } catch (error) {
+            renderApiResponse(responseContainer, { error: error.message, path, method });
+        }
+    }
+
+    function applyEndpointPreset() {
+        const [path, forcedMethod] = els.endpointSelect.value.split('|');
+        if (forcedMethod === 'POST') els.endpointMethod.value = 'POST';
+        if (path === '/api/show') {
+            els.endpointBodyInput.value = toPrettyJson(API_TESTER_EXAMPLES.show.body);
+        } else if (path === '/v1/chat/completions') {
+            const model = els.modelSelect.value || 'llama3.2';
+            const sample = { ...API_TESTER_EXAMPLES.completions.body, model };
+            els.endpointBodyInput.value = toPrettyJson(sample);
+        } else {
+            els.endpointBodyInput.value = '';
+        }
+    }
+
+    function loadJsonTemplate() {
+        const key = els.jsonTemplateSelect.value;
+        const template = API_TESTER_EXAMPLES[key];
+        const model = els.modelSelect.value || 'llama3.2';
+        const payload = { path: template.path, method: template.method };
+        if (template.body) {
+            payload.body = JSON.parse(JSON.stringify(template.body));
+            if (payload.body.model) payload.body.model = model;
+        }
+        els.jsonRequestInput.value = toPrettyJson(payload);
+    }
+
+    function saveConfig() {
+        localStorage.setItem(STORAGE.CONFIG, JSON.stringify({
+            source: Array.from(els.radios).find(r => r.checked).value,
+            url: els.apiUrl.value, key: els.apiKey.value,
+            ctx: els.contextLen.value, reasoning: els.enableReasoning.checked
+        }));
+    }
+
+    function loadConfig() {
+        const serverKey = window.__OLLAMA_API_KEY__ || '';
+        const data = localStorage.getItem(STORAGE.CONFIG);
+        if (!data) {
+            if (serverKey) els.apiKey.value = serverKey;
+            handleSourceChange();
+            return;
+        }
+        const c = JSON.parse(data);
+        const r = Array.from(els.radios).find(rad => rad.value === c.source);
+        if (r) r.checked = true;
+        els.apiUrl.value = c.url || '';
+        const source = c.source || 'docker';
+        const useServerKey = source === 'docker' || source === 'native' || source === 'direct';
+        els.apiKey.value = useServerKey ? serverKey : (c.key || '');
+        els.contextLen.value = c.ctx || 4096;
+        els.enableReasoning.checked = c.reasoning || false;
+        handleSourceChange();
+    }
+
+    function handleSourceChange() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        const host = window.location.hostname;
+        const isCustom = source === 'custom';
+        els.presetGroup.style.display = isCustom ? 'block' : 'none';
+        els.modelCustom.style.display = isCustom ? 'block' : 'none';
+        document.getElementById('modelCustomCopyBtn').style.display = isCustom ? 'inline-flex' : 'none';
+        els.modelSelect.style.display = isCustom ? 'none' : 'block';
+        document.getElementById('modelSelectCopyBtn').style.display = isCustom ? 'none' : 'inline-flex';
+        if (source === 'docker') els.apiUrl.value = `https://${host}:11443`;
+        else if (source === 'native') els.apiUrl.value = `https://${host}:11444`;
+        else if (source === 'direct') els.apiUrl.value = `http://${host}:11434`;
+        loadModels();
+        saveConfig();
+    }
+
+    function copyToClipboard(id, btn) {
+        const el = document.getElementById(id);
+        const text = el.value;
+        if (!text) return;
+        const origHTML = btn.innerHTML;
+        const finish = () => {
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.innerHTML = origHTML; btn.classList.remove('copied'); }, 1500);
+        };
+        navigator.clipboard.writeText(text).then(finish).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta); finish();
+        });
+    }
+
+    async function testAuthentication() {
+        const url = els.apiUrl.value;
+        const key = els.apiKey.value;
+        if (!key) { els.authResult.innerText = 'Enter a key first'; els.authResult.style.color = 'orange'; return; }
+        els.authResult.innerText = 'Testing...';
+        els.authResult.style.color = 'var(--text-sec)';
+        try {
+            const res = await fetch(`${url}/v1/models`, { headers: { 'Authorization': `Bearer ${key}` } });
+            if (res.ok) {
+                els.authResult.innerText = '[OK] Key valid';
+                els.authResult.style.color = 'var(--gpu)';
+            } else {
+                const data = await res.json().catch(() => ({}));
+                els.authResult.innerText = `[ERR] ${res.status}: ${data.error?.code || 'Unauthorized'}`;
+                els.authResult.style.color = 'red';
+            }
+        } catch (e) {
+            els.authResult.innerText = 'Connection failed';
+            els.authResult.style.color = 'red';
+        }
+    }
+
+    async function loadModels() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        if (source === 'custom') return;
+        try {
+            const res = await fetch(`${els.apiUrl.value}/api/tags`);
+            const data = await res.json();
+            els.modelSelect.innerHTML = data.models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+            els.statusDot.className = 'status-dot status-online';
+            els.statusText.innerText = 'Online';
+            checkReasoningCapability();
+        } catch (e) {
+            els.statusDot.className = 'status-dot';
+            els.statusText.innerText = 'Offline / Error';
+        }
+    }
+
+    function checkReasoningCapability() {
+        const name = els.modelSelect.value.toLowerCase();
+        const isReasoning = name.includes('r1') || name.includes('o1') || name.includes('reason');
+        els.reasoningInd.style.display = isReasoning ? 'block' : 'none';
+    }
+
+    async function execute() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        const url = els.apiUrl.value;
+        const model = source === 'custom' ? els.modelCustom.value : els.modelSelect.value;
+        const prompt = els.prompt.value;
+        if (!prompt || !model) return;
+        localStorage.setItem(STORAGE.LAST_PROMPT, prompt);
+        els.btn.disabled = true;
+        els.resp.innerHTML = '<em style="color:#666">Thinking...</em>';
+        els.reasoningBox.style.display = 'none';
+        const start = performance.now();
+        try {
+            const res = await fetch(`${url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': els.apiKey.value ? `Bearer ${els.apiKey.value}` : 'Bearer ollama'
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: parseInt(els.contextLen.value)
+                })
+            });
+            const data = await res.json();
+            const content = data.choices[0].message.content;
+
+            if (content.includes('<think>')) {
+                const parts = content.split('</think>');
+                const thinking = parts[0].replace('<think>', '').trim();
+                const answer = parts[1].trim();
+                els.reasoningBox.innerHTML = renderMd(thinking);
+                els.reasoningBox.style.display = 'block';
+                applyHighlight(els.reasoningBox);
+                els.resp.innerHTML = renderMd(answer);
+            } else {
+                els.resp.innerHTML = renderMd(content);
+            }
+
+            applyHighlight(els.resp);
+            els.mTotal.innerText = `${((performance.now() - start) / 1000).toFixed(2)}s`;
+            updateHardwareMetrics();
+        } catch (e) {
+            els.resp.innerHTML = `<span style="color:#e74c3c">Error: ${e.message}</span>`;
+        } finally {
+            els.btn.disabled = false;
+        }
+    }
+
+    async function updateHardwareMetrics() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        if (source === 'custom') return;
+        try {
+            const res = await fetch(`${els.apiUrl.value}/api/ps`);
+            const data = await res.json();
+            const model = data.models?.find(m => els.modelSelect.value.startsWith(m.name));
+            if (model) {
+                const gpuBytes = model.size_vram || 0;
+                const cpuBytes = (model.size || 0) - gpuBytes;
+                const gpuPct = model.size > 0 ? Math.round((gpuBytes / model.size) * 100) : 0;
+                const gpuGB = (gpuBytes / 1e9).toFixed(2);
+                const cpuGB = (cpuBytes / 1e9).toFixed(2);
+                if (gpuPct === 100) {
+                    els.badge.textContent = `GPU | ${gpuGB} GB`;
+                    els.badge.style.background = '#2ecc71';
+                    els.mVram.textContent = `VRAM: ${gpuGB} GB`;
+                } else if (gpuPct > 0) {
+                    els.badge.textContent = 'HYBRID';
+                    els.badge.style.background = '#9b59b6';
+                    els.mVram.textContent = `VRAM: ${gpuGB} GB  RAM: ${cpuGB} GB`;
+                } else {
+                    els.badge.textContent = `CPU | ${cpuGB} GB`;
+                    els.badge.style.background = '#f39c12';
+                    els.mVram.textContent = `RAM: ${cpuGB} GB`;
+                }
+            } else {
+                els.badge.textContent = 'Standby';
+                els.badge.style.background = '#95a5a6';
+                els.mVram.textContent = 'Memory: -';
+            }
+        } catch (e) {}
+    }
+
+    els.radios.forEach(r => r.addEventListener('change', handleSourceChange));
+    els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); });
+    els.modelSelect.addEventListener('change', checkReasoningCapability);
+    els.endpointSelect.addEventListener('change', applyEndpointPreset);
+    els.jsonTemplateSelect.addEventListener('change', loadJsonTemplate);
+    els.btn.addEventListener('click', execute);
+    els.testAuthBtn.addEventListener('click', testAuthentication);
+
+    els.testerTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            els.testerTabs.forEach(t => t.classList.remove('active'));
+            els.testerPanels.forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            const panel = document.getElementById(tab.dataset.testerTab);
+            panel.classList.add('active');
+            if (tab.dataset.testerTab === 'endpointPanel' && !els.endpointResponse.textContent.trim()) {
+                els.endpointResponse.textContent = 'Waiting for request...';
+            }
+            if (tab.dataset.testerTab === 'jsonPanel' && !els.jsonResponse.textContent.trim()) {
+                els.jsonResponse.textContent = 'Waiting for request...';
+            }
+        });
+    });
+
+    els.runEndpointBtn.addEventListener('click', async () => {
+        const [selectedPath, forcedMethod] = els.endpointSelect.value.split('|');
+        const path = (els.endpointPathOverride.value || '').trim() || selectedPath;
+        let method = els.endpointMethod.value;
+        if (forcedMethod === 'POST') method = 'POST';
+        let body;
+        const raw = els.endpointBodyInput.value.trim();
+        if (raw) {
+            try { body = JSON.parse(raw); }
+            catch { els.endpointResponse.textContent = 'Invalid JSON body.'; return; }
+        }
+        await runApiRequest(path, method, body, (els.corsOriginInput.value || '').trim(), els.endpointResponse, els.endpointCurlOutput);
+    });
+
+    els.copyEndpointCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.endpointCurlOutput.value || ''));
+
+    els.runJsonRequestBtn.addEventListener('click', async () => {
+        let request;
+        try { request = JSON.parse(els.jsonRequestInput.value); }
+        catch { els.jsonResponse.textContent = 'Invalid JSON request template.'; return; }
+        const path = request.path || '/api/tags';
+        let method = (request.method || 'GET').toUpperCase();
+        if (path === '/v1/chat/completions' || path === '/api/show') method = 'POST';
+        await runApiRequest(path, method, request.body, (request.origin || '').trim(), els.jsonResponse, els.jsonCurlOutput);
+    });
+
+    els.copyJsonCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.jsonCurlOutput.value || ''));
+
+    window.onload = () => {
+        loadConfig();
+        els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
+        applyEndpointPreset();
+        loadJsonTemplate();
+        els.endpointResponse.textContent = 'Waiting for request...';
+        els.jsonResponse.textContent = 'Waiting for request...';
+        setInterval(updateHardwareMetrics, 5000);
+    };
 </script>
 </body>
 </html>
@@ -621,6 +1142,26 @@ else
         || cp "config/docker-compose.hybrid.yml" "docker-compose.yml"
 fi
 ok "docker-compose.yml configured."
+
+# =============================================================================
+# STEP 1B — Configure CORS origins
+# =============================================================================
+echo ""
+echo " CORS origin policy (OLLAMA_ORIGINS)"
+echo "  1. Allow all origins (*)"
+echo "  2. Allow specific origin(s) (comma-separated)"
+printf " Enter choice (1-2) [default: 1]: "
+read -r ORIGIN_CHOICE
+ORIGIN_CHOICE="${ORIGIN_CHOICE:-1}"
+if [ "$ORIGIN_CHOICE" = "2" ]; then
+    printf " Enter origin(s), e.g. https://app.local,https://portal.local: "
+    read -r ORIGINS_VALUE
+    ORIGINS_VALUE="${ORIGINS_VALUE:-*}"
+else
+    ORIGINS_VALUE="*"
+fi
+set_env_value "OLLAMA_ORIGINS" "$ORIGINS_VALUE"
+ok "OLLAMA_ORIGINS configured as: $ORIGINS_VALUE"
 
 # =============================================================================
 # STEP 2 — Stop native Ollama if HYBRID mode

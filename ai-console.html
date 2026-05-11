@@ -67,6 +67,22 @@
         .btn-copy { padding: 5px 8px; background: #5f6368; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; flex-shrink: 0; line-height: 1; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; }
         .btn-copy:hover { background: #4a4f54; }
         .btn-copy.copied { background: #2ecc71; }
+        .tester-wrap { margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+        .tester-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tester-tab-btn { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #eef2ff; color: #1e3a8a; font-weight: 700; cursor: pointer; }
+        .tester-tab-btn.active { background: #dbeafe; border-color: #93c5fd; }
+        .tester-panel { display: none; margin-top: 10px; }
+        .tester-panel.active { display: block; }
+        .tester-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        .btn-alt { padding: 10px 12px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; color: #fff; background: #374151; }
+        .mono { font-family: 'Fira Code', 'Consolas', monospace; }
+        .tester-response {
+            background: #111827; color: #e5e7eb; border-radius: 8px; border: 1px solid #0f172a;
+            min-height: 130px; max-height: 380px; overflow: auto; padding: 12px; white-space: pre-wrap;
+            font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.84rem;
+        }
+        @media (max-width: 900px) { .tester-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -137,6 +153,93 @@
     </div>
     <div id="reasoningOutput" class="reasoning-box"></div>
     <div id="response"><em style="color:#666">Waiting for query...</em></div>
+
+    <div class="tester-wrap">
+        <h3 style="margin:0 0 6px 0">API Testing Tabs</h3>
+        <div class="tester-tabs">
+            <button class="tester-tab-btn active" data-tester-tab="endpointPanel">Endpoint Tester</button>
+            <button class="tester-tab-btn" data-tester-tab="jsonPanel">JSON Request Tester</button>
+        </div>
+
+        <div class="tester-panel active" id="endpointPanel">
+            <div class="tester-grid">
+                <div class="form-group">
+                    <label>Quick Endpoint</label>
+                    <select id="endpointSelect">
+                        <option value="/v1/models|GET">/v1/models (GET)</option>
+                        <option value="/api/tags|GET">/api/tags (GET)</option>
+                        <option value="/api/ps|GET">/api/ps (GET)</option>
+                        <option value="/api/version|GET">/api/version (GET)</option>
+                        <option value="/api/show|POST">/api/show (POST)</option>
+                        <option value="/v1/chat/completions|POST">/v1/chat/completions (POST)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>HTTP Method</label>
+                    <select id="endpointMethod">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="OPTIONS">OPTIONS</option>
+                    </select>
+                </div>
+            </div>
+            <div class="tester-grid">
+                <div class="form-group">
+                    <label>Path Override (optional)</label>
+                    <input type="text" id="endpointPathOverride" placeholder="/api/tags">
+                </div>
+                <div class="form-group">
+                    <label>Origin Header for CORS test (optional)</label>
+                    <input type="text" id="corsOriginInput" placeholder="https://myapp.local">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Body JSON (used for POST/OPTIONS when provided)</label>
+                <textarea id="endpointBodyInput" class="mono" rows="7"></textarea>
+            </div>
+            <div class="btn-row">
+                <button class="btn-main" id="runEndpointBtn">Run Endpoint Request</button>
+                <button class="btn-alt" id="copyEndpointCurlBtn">Copy curl</button>
+            </div>
+            <div class="form-group">
+                <label>Generated curl</label>
+                <textarea id="endpointCurlOutput" class="mono" rows="4" readonly></textarea>
+            </div>
+            <div class="form-group">
+                <label>Endpoint Response</label>
+                <div id="endpointResponse" class="tester-response">Waiting for request...</div>
+            </div>
+        </div>
+
+        <div class="tester-panel" id="jsonPanel">
+            <div class="form-group">
+                <label>JSON Request Template</label>
+                <select id="jsonTemplateSelect">
+                    <option value="models">Template: /v1/models</option>
+                    <option value="tags">Template: /api/tags</option>
+                    <option value="ps">Template: /api/ps</option>
+                    <option value="show">Template: /api/show</option>
+                    <option value="completions">Template: /v1/chat/completions</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Editable JSON Request</label>
+                <textarea id="jsonRequestInput" class="mono" rows="14"></textarea>
+            </div>
+            <div class="btn-row">
+                <button class="btn-main" id="runJsonRequestBtn">Run JSON Request</button>
+                <button class="btn-alt" id="copyJsonCurlBtn">Copy curl</button>
+            </div>
+            <div class="form-group">
+                <label>Generated curl</label>
+                <textarea id="jsonCurlOutput" class="mono" rows="4" readonly></textarea>
+            </div>
+            <div class="form-group">
+                <label>JSON Tester Response</label>
+                <div id="jsonResponse" class="tester-response">Waiting for request...</div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -152,6 +255,21 @@
     }
 
     const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt' };
+    const API_TESTER_EXAMPLES = {
+        models: { path: '/v1/models', method: 'GET' },
+        tags: { path: '/api/tags', method: 'GET' },
+        ps: { path: '/api/ps', method: 'GET' },
+        show: { path: '/api/show', method: 'POST', body: { model: 'llama3.2' } },
+        completions: {
+            path: '/v1/chat/completions',
+            method: 'POST',
+            body: {
+                model: 'llama3.2',
+                messages: [{ role: 'user', content: 'Hello from API tester' }],
+                max_tokens: 256
+            }
+        }
+    };
     const els = {
         radios: document.getElementsByName('source'),
         apiUrl: document.getElementById('apiUrl'),
@@ -173,8 +291,112 @@
         mTotal: document.getElementById('mTotal'),
         mVram: document.getElementById('mVram'),
         statusText: document.getElementById('statusText'),
-        statusDot: document.getElementById('statusDot')
+        statusDot: document.getElementById('statusDot'),
+        testerTabs: document.querySelectorAll('.tester-tab-btn'),
+        testerPanels: document.querySelectorAll('.tester-panel'),
+        endpointSelect: document.getElementById('endpointSelect'),
+        endpointMethod: document.getElementById('endpointMethod'),
+        endpointPathOverride: document.getElementById('endpointPathOverride'),
+        corsOriginInput: document.getElementById('corsOriginInput'),
+        endpointBodyInput: document.getElementById('endpointBodyInput'),
+        runEndpointBtn: document.getElementById('runEndpointBtn'),
+        copyEndpointCurlBtn: document.getElementById('copyEndpointCurlBtn'),
+        endpointCurlOutput: document.getElementById('endpointCurlOutput'),
+        endpointResponse: document.getElementById('endpointResponse'),
+        jsonTemplateSelect: document.getElementById('jsonTemplateSelect'),
+        jsonRequestInput: document.getElementById('jsonRequestInput'),
+        runJsonRequestBtn: document.getElementById('runJsonRequestBtn'),
+        copyJsonCurlBtn: document.getElementById('copyJsonCurlBtn'),
+        jsonCurlOutput: document.getElementById('jsonCurlOutput'),
+        jsonResponse: document.getElementById('jsonResponse')
     };
+
+    function toPrettyJson(value) {
+        return JSON.stringify(value, null, 2);
+    }
+
+    function shellEscapeSingle(value) {
+        return `'${String(value).replace(/'/g, `'\\''`)}'`;
+    }
+
+    function buildCurl(url, method, headers, body) {
+        const cmd = ['curl -k -sS'];
+        cmd.push(`-X ${method}`);
+        Object.entries(headers).forEach(([k, v]) => cmd.push(`-H ${shellEscapeSingle(`${k}: ${v}`)}`));
+        if (body !== undefined && body !== null && method !== 'GET') {
+            const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+            cmd.push(`--data ${shellEscapeSingle(bodyText)}`);
+        }
+        cmd.push(shellEscapeSingle(url));
+        return cmd.join(' ');
+    }
+
+    function renderApiResponse(container, payload) {
+        if (typeof payload === 'string') {
+            container.textContent = payload;
+            return;
+        }
+        container.textContent = toPrettyJson(payload);
+    }
+
+    async function runApiRequest(path, method, body, origin, responseContainer, curlContainer) {
+        const url = `${els.apiUrl.value}${path}`;
+        const headers = {};
+        if (els.apiKey.value) headers.Authorization = `Bearer ${els.apiKey.value}`;
+        if (origin) headers.Origin = origin;
+        if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json';
+
+        const curlCmd = buildCurl(url, method, headers, body);
+        if (curlContainer) curlContainer.value = curlCmd;
+        responseContainer.textContent = 'Waiting for response...';
+
+        const options = { method, headers };
+        if (body !== undefined && body !== null && method !== 'GET' && method !== 'OPTIONS') {
+            options.body = typeof body === 'string' ? body : JSON.stringify(body);
+        }
+
+        try {
+            const response = await fetch(url, options);
+            const text = await response.text();
+            let data;
+            try { data = JSON.parse(text); } catch { data = text; }
+            renderApiResponse(responseContainer, {
+                status: response.status,
+                status_text: response.statusText,
+                path,
+                method,
+                data
+            });
+        } catch (error) {
+            renderApiResponse(responseContainer, { error: error.message, path, method });
+        }
+    }
+
+    function applyEndpointPreset() {
+        const [path, forcedMethod] = els.endpointSelect.value.split('|');
+        if (forcedMethod === 'POST') els.endpointMethod.value = 'POST';
+        if (path === '/api/show') {
+            els.endpointBodyInput.value = toPrettyJson(API_TESTER_EXAMPLES.show.body);
+        } else if (path === '/v1/chat/completions') {
+            const model = els.modelSelect.value || 'llama3.2';
+            const sample = { ...API_TESTER_EXAMPLES.completions.body, model };
+            els.endpointBodyInput.value = toPrettyJson(sample);
+        } else {
+            els.endpointBodyInput.value = '';
+        }
+    }
+
+    function loadJsonTemplate() {
+        const key = els.jsonTemplateSelect.value;
+        const template = API_TESTER_EXAMPLES[key];
+        const model = els.modelSelect.value || 'llama3.2';
+        const payload = { path: template.path, method: template.method };
+        if (template.body) {
+            payload.body = JSON.parse(JSON.stringify(template.body));
+            if (payload.body.model) payload.body.model = model;
+        }
+        els.jsonRequestInput.value = toPrettyJson(payload);
+    }
 
     function saveConfig() {
         localStorage.setItem(STORAGE.CONFIG, JSON.stringify({
@@ -368,11 +590,62 @@
     els.radios.forEach(r => r.addEventListener('change', handleSourceChange));
     els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); });
     els.modelSelect.addEventListener('change', checkReasoningCapability);
+    els.endpointSelect.addEventListener('change', applyEndpointPreset);
+    els.jsonTemplateSelect.addEventListener('change', loadJsonTemplate);
     els.btn.addEventListener('click', execute);
     els.testAuthBtn.addEventListener('click', testAuthentication);
+
+    els.testerTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            els.testerTabs.forEach(t => t.classList.remove('active'));
+            els.testerPanels.forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            const panel = document.getElementById(tab.dataset.testerTab);
+            panel.classList.add('active');
+            if (tab.dataset.testerTab === 'endpointPanel' && !els.endpointResponse.textContent.trim()) {
+                els.endpointResponse.textContent = 'Waiting for request...';
+            }
+            if (tab.dataset.testerTab === 'jsonPanel' && !els.jsonResponse.textContent.trim()) {
+                els.jsonResponse.textContent = 'Waiting for request...';
+            }
+        });
+    });
+
+    els.runEndpointBtn.addEventListener('click', async () => {
+        const [selectedPath, forcedMethod] = els.endpointSelect.value.split('|');
+        const path = (els.endpointPathOverride.value || '').trim() || selectedPath;
+        let method = els.endpointMethod.value;
+        if (forcedMethod === 'POST') method = 'POST';
+        let body;
+        const raw = els.endpointBodyInput.value.trim();
+        if (raw) {
+            try { body = JSON.parse(raw); }
+            catch { els.endpointResponse.textContent = 'Invalid JSON body.'; return; }
+        }
+        await runApiRequest(path, method, body, (els.corsOriginInput.value || '').trim(), els.endpointResponse, els.endpointCurlOutput);
+    });
+
+    els.copyEndpointCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.endpointCurlOutput.value || ''));
+
+    els.runJsonRequestBtn.addEventListener('click', async () => {
+        let request;
+        try { request = JSON.parse(els.jsonRequestInput.value); }
+        catch { els.jsonResponse.textContent = 'Invalid JSON request template.'; return; }
+        const path = request.path || '/api/tags';
+        let method = (request.method || 'GET').toUpperCase();
+        if (path === '/v1/chat/completions' || path === '/api/show') method = 'POST';
+        await runApiRequest(path, method, request.body, (request.origin || '').trim(), els.jsonResponse, els.jsonCurlOutput);
+    });
+
+    els.copyJsonCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.jsonCurlOutput.value || ''));
+
     window.onload = () => {
         loadConfig();
         els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
+        applyEndpointPreset();
+        loadJsonTemplate();
+        els.endpointResponse.textContent = 'Waiting for request...';
+        els.jsonResponse.textContent = 'Waiting for request...';
         setInterval(updateHardwareMetrics, 5000);
     };
 </script>

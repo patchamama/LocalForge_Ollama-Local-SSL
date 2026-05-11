@@ -16,6 +16,7 @@ services:
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-10m}
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - .:/usr/share/caddy
