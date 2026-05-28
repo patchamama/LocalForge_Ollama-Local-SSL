@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal AI Console - SSL Aware</title>
-    <script>window.__OLLAMA_API_KEY__ = "{{env "OLLAMA_API_KEY"}}";</script>
+    <script>
+    (function(){
+        var raw = '{{env "OLLAMA_API_KEY"}}';
+        window.__OLLAMA_API_KEY__ = (raw.indexOf('{{') === -1) ? raw : '';
+    })();
+    </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
@@ -83,6 +88,15 @@
             font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.84rem;
         }
         @media (max-width: 900px) { .tester-grid { grid-template-columns: 1fr; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .history-wrap { border: 1px solid #e0e0e0; border-radius: 10px; padding: 12px 15px; background: #fafafa; }
+        .history-header { display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 0.9rem; cursor: pointer; user-select: none; }
+        .history-header:hover { color: var(--primary); }
+        #historyTable tbody tr:nth-child(even) { background: #f8f9fa; }
+        #historyTable tbody tr:hover { background: #eef2ff; }
+        #historyTable td { padding: 6px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .history-question { color: var(--primary); cursor: pointer; text-decoration: underline dotted; max-width: 380px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-question:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -94,12 +108,19 @@
                 <label><input type="radio" name="source" value="docker" checked> Docker (SSL)</label>
                 <label><input type="radio" name="source" value="native"> Native (SSL)</label>
                 <label><input type="radio" name="source" value="direct"> Direct (11434)</label>
+                <label><input type="radio" name="source" value="local"> Local (11434)</label>
                 <label><input type="radio" name="source" value="custom"> SaaS / Custom</label>
             </div>
         </div>
-        <div style="text-align: right">
-            <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
-            <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
+        <div style="text-align: right; display:flex; align-items:center; gap:10px; justify-content:flex-end">
+            <span id="pendingSpinner" style="display:none;align-items:center;gap:6px;color:var(--primary)">
+                <i class="bi bi-arrow-repeat" style="font-size:1.3rem;animation:spin 0.8s linear infinite"></i>
+                <span id="pendingTimer" style="font-size:0.8rem;font-weight:700;font-family:'Fira Code','Consolas',monospace"></span>
+            </span>
+            <div>
+                <div id="hwBadge" class="badge" style="background: #95a5a6">Standby</div>
+                <div id="reasoningIndicator" style="font-size: 10px; color: #1a73e8; font-weight: bold; margin-top: 5px; display: none;"><i class="bi bi-cpu"></i> REASONING MODEL</div>
+            </div>
         </div>
     </div>
     <div class="grid-config">
@@ -135,6 +156,7 @@
             <label>Model Name</label>
             <div style="display:flex;gap:5px;align-items:center;">
                 <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
+                <button class="btn-copy" id="refreshModelsBtn" title="Refresh models"><i class="bi bi-arrow-clockwise"></i></button>
                 <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
                 <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
                 <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
@@ -153,6 +175,33 @@
     </div>
     <div id="reasoningOutput" class="reasoning-box"></div>
     <div id="response"><em style="color:#666">Waiting for query...</em></div>
+
+    <div class="history-wrap">
+        <div class="history-header" id="historyToggle">
+            <span><i class="bi bi-clock-history"></i> Query History</span>
+            <span id="historyCount" style="font-size:0.8rem;color:var(--text-sec);margin-left:8px"></span>
+            <i class="bi bi-chevron-down" id="historyChevron" style="margin-left:auto;transition:transform 0.2s"></i>
+        </div>
+        <div id="historyPanel" style="display:none;overflow-x:auto;margin-top:10px">
+            <table id="historyTable" style="width:100%;border-collapse:collapse;font-size:0.83rem">
+                <thead>
+                    <tr style="background:#f1f3f4;text-align:left">
+                        <th style="padding:7px 10px;white-space:nowrap">Time</th>
+                        <th style="padding:7px 10px;white-space:nowrap">Model</th>
+                        <th style="padding:7px 10px;white-space:nowrap">Latency</th>
+                        <th style="padding:7px 10px;white-space:nowrap">VRAM</th>
+                        <th style="padding:7px 10px;width:100%">Question</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr><td colspan="5" style="padding:12px 10px;color:var(--text-sec);font-style:italic">No queries yet.</td></tr>
+                </tbody>
+            </table>
+            <div style="display:flex;justify-content:flex-end;margin-top:6px">
+                <button class="btn-small" id="clearHistoryBtn">Clear history</button>
+            </div>
+        </div>
+    </div>
 
     <div class="tester-wrap">
         <h3 style="margin:0 0 6px 0">API Testing Tabs</h3>
@@ -245,6 +294,41 @@
 <script>
     marked.use({ gfm: true, breaks: true });
 
+    let _activeRequests = 0;
+    let _currentAbort = null;
+    let _timerInterval = null;
+    let _timerStart = null;
+
+    function formatElapsed(ms) {
+        const s = Math.floor(ms / 1000);
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return `${m}m ${String(r).padStart(2,'0')}s`;
+    }
+
+    function setRequestActive(active) {
+        _activeRequests = Math.max(0, _activeRequests + (active ? 1 : -1));
+        const spinner = document.getElementById('pendingSpinner');
+        const timer = document.getElementById('pendingTimer');
+        if (_activeRequests > 0) {
+            if (!_timerInterval) {
+                _timerStart = performance.now();
+                timer.textContent = '0s';
+                _timerInterval = setInterval(() => {
+                    timer.textContent = formatElapsed(performance.now() - _timerStart);
+                }, 500);
+            }
+            spinner.style.display = 'inline-flex';
+        } else {
+            spinner.style.display = 'none';
+            clearInterval(_timerInterval);
+            _timerInterval = null;
+            _timerStart = null;
+            timer.textContent = '';
+        }
+    }
+
     function renderMd(text) {
         if (!text) return '';
         return marked.parse(text);
@@ -254,7 +338,8 @@
         container.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
     }
 
-    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt' };
+    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt', HISTORY: 'ai_console_history' };
+    const MAX_HISTORY = 50;
     const API_TESTER_EXAMPLES = {
         models: { path: '/v1/models', method: 'GET' },
         tags: { path: '/api/tags', method: 'GET' },
@@ -399,10 +484,16 @@
     }
 
     function saveConfig() {
+        const source = Array.from(els.radios).find(r => r.checked).value;
+        const existing = JSON.parse(localStorage.getItem(STORAGE.CONFIG) || '{}');
+        const urls = existing.urls || {};
+        urls[source] = els.apiUrl.value;
         localStorage.setItem(STORAGE.CONFIG, JSON.stringify({
-            source: Array.from(els.radios).find(r => r.checked).value,
-            url: els.apiUrl.value, key: els.apiKey.value,
-            ctx: els.contextLen.value, reasoning: els.enableReasoning.checked
+            source,
+            urls,
+            key: els.apiKey.value,
+            ctx: els.contextLen.value,
+            reasoning: els.enableReasoning.checked
         }));
     }
 
@@ -417,27 +508,32 @@
         const c = JSON.parse(data);
         const r = Array.from(els.radios).find(rad => rad.value === c.source);
         if (r) r.checked = true;
-        els.apiUrl.value = c.url || '';
         const source = c.source || 'docker';
-        const useServerKey = source === 'docker' || source === 'native' || source === 'direct';
+        const useServerKey = source === 'docker' || source === 'native' || source === 'direct' || source === 'local';
         els.apiKey.value = useServerKey ? serverKey : (c.key || '');
         els.contextLen.value = c.ctx || 4096;
         els.enableReasoning.checked = c.reasoning || false;
-        handleSourceChange();
+        handleSourceChange(c.urls || {});
     }
 
-    function handleSourceChange() {
+    const SOURCE_DEFAULTS = {
+        docker: () => `https://${window.location.hostname}:11443`,
+        native: () => `https://${window.location.hostname}:11444`,
+        direct: () => `http://${window.location.hostname}:11434`,
+        local:  () => `http://localhost:11434`,
+    };
+
+    function handleSourceChange(savedUrls = {}) {
         const source = Array.from(els.radios).find(r => r.checked).value;
-        const host = window.location.hostname;
         const isCustom = source === 'custom';
         els.presetGroup.style.display = isCustom ? 'block' : 'none';
         els.modelCustom.style.display = isCustom ? 'block' : 'none';
         document.getElementById('modelCustomCopyBtn').style.display = isCustom ? 'inline-flex' : 'none';
         els.modelSelect.style.display = isCustom ? 'none' : 'block';
         document.getElementById('modelSelectCopyBtn').style.display = isCustom ? 'none' : 'inline-flex';
-        if (source === 'docker') els.apiUrl.value = `https://${host}:11443`;
-        else if (source === 'native') els.apiUrl.value = `https://${host}:11444`;
-        else if (source === 'direct') els.apiUrl.value = `http://${host}:11434`;
+        if (SOURCE_DEFAULTS[source]) {
+            els.apiUrl.value = savedUrls[source] || SOURCE_DEFAULTS[source]();
+        }
         loadModels();
         saveConfig();
     }
@@ -504,20 +600,84 @@
         els.reasoningInd.style.display = isReasoning ? 'block' : 'none';
     }
 
+    function loadHistory() {
+        try { return JSON.parse(localStorage.getItem(STORAGE.HISTORY) || '[]'); } catch { return []; }
+    }
+
+    function saveHistory(entries) {
+        localStorage.setItem(STORAGE.HISTORY, JSON.stringify(entries.slice(0, MAX_HISTORY)));
+    }
+
+    function renderHistory() {
+        const entries = loadHistory();
+        const tbody = document.getElementById('historyBody');
+        const countEl = document.getElementById('historyCount');
+        countEl.textContent = entries.length ? `(${entries.length})` : '';
+        if (!entries.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:12px 10px;color:var(--text-sec);font-style:italic">No queries yet.</td></tr>';
+            return;
+        }
+        const latencies = entries.map(e => parseFloat(e.latency));
+        const minLat = Math.min(...latencies);
+        const maxLat = Math.max(...latencies);
+        const latColor = (val) => {
+            if (latencies.length < 2) return '';
+            if (val === minLat) return 'color:#2ecc71;font-weight:700';
+            if (val === maxLat) return 'color:#e74c3c;font-weight:700';
+            return 'color:#f39c12;font-weight:700';
+        };
+        tbody.innerHTML = entries.map((e, i) => `
+            <tr>
+                <td style="white-space:nowrap;color:var(--text-sec)">${e.time}</td>
+                <td style="white-space:nowrap;font-family:'Fira Code','Consolas',monospace;font-size:0.8rem">${escHtml(e.model)}</td>
+                <td style="white-space:nowrap;${latColor(parseFloat(e.latency))}">${e.latency}</td>
+                <td style="white-space:nowrap">${e.vram}</td>
+                <td><span class="history-question" title="${escHtml(e.question)}" data-idx="${i}">${escHtml(e.question)}</span></td>
+            </tr>
+        `).join('');
+        tbody.querySelectorAll('.history-question').forEach(el => {
+            el.addEventListener('click', () => {
+                const idx = parseInt(el.dataset.idx);
+                const entry = loadHistory()[idx];
+                if (entry) els.prompt.value = entry.question;
+            });
+        });
+    }
+
+    function escHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function addHistoryEntry(model, latencyStr, vramStr, question) {
+        const entries = loadHistory();
+        const now = new Date();
+        const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        entries.unshift({ time, model, latency: latencyStr, vram: vramStr, question });
+        saveHistory(entries);
+        renderHistory();
+    }
+
     async function execute() {
         const source = Array.from(els.radios).find(r => r.checked).value;
         const url = els.apiUrl.value;
         const model = source === 'custom' ? els.modelCustom.value : els.modelSelect.value;
         const prompt = els.prompt.value;
         if (!prompt || !model) return;
+
+        if (_currentAbort) { _currentAbort.abort(); _currentAbort = null; }
+        const controller = new AbortController();
+        _currentAbort = controller;
+
         localStorage.setItem(STORAGE.LAST_PROMPT, prompt);
         els.btn.disabled = true;
         els.resp.innerHTML = '<em style="color:#666">Thinking...</em>';
         els.reasoningBox.style.display = 'none';
         const start = performance.now();
+        setRequestActive(true);
         try {
             const res = await fetch(`${url}/v1/chat/completions`, {
                 method: 'POST',
+                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': els.apiKey.value ? `Bearer ${els.apiKey.value}` : 'Bearer ollama'
@@ -544,11 +704,19 @@
             }
 
             applyHighlight(els.resp);
-            els.mTotal.innerText = `${((performance.now() - start) / 1000).toFixed(2)}s`;
-            updateHardwareMetrics();
+            const latency = ((performance.now() - start) / 1000).toFixed(2);
+            els.mTotal.innerText = `${latency}s`;
+            await updateHardwareMetrics();
+            addHistoryEntry(model, `${latency}s`, els.mVram.innerText.replace('Memory: -','—'), prompt);
         } catch (e) {
-            els.resp.innerHTML = `<span style="color:#e74c3c">Error: ${e.message}</span>`;
+            if (e.name === 'AbortError') {
+                els.resp.innerHTML = `<em style="color:#f39c12">Request cancelled.</em>`;
+            } else {
+                els.resp.innerHTML = `<span style="color:#e74c3c">Error: ${e.message}</span>`;
+            }
         } finally {
+            setRequestActive(false);
+            if (_currentAbort === controller) _currentAbort = null;
             els.btn.disabled = false;
         }
     }
@@ -587,8 +755,27 @@
         } catch (e) {}
     }
 
-    els.radios.forEach(r => r.addEventListener('change', handleSourceChange));
-    els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); });
+    els.radios.forEach(r => r.addEventListener('change', () => {
+        const existing = JSON.parse(localStorage.getItem(STORAGE.CONFIG) || '{}');
+        handleSourceChange(existing.urls || {});
+    }));
+    els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); loadModels(); });
+
+    let _urlDebounce;
+    els.apiUrl.addEventListener('input', () => {
+        clearTimeout(_urlDebounce);
+        _urlDebounce = setTimeout(() => { saveConfig(); loadModels(); }, 800);
+    });
+
+    document.getElementById('refreshModelsBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('refreshModelsBtn');
+        const icon = btn.querySelector('i');
+        btn.disabled = true;
+        icon.style.animation = 'spin 0.7s linear infinite';
+        await loadModels();
+        icon.style.animation = '';
+        btn.disabled = false;
+    });
     els.modelSelect.addEventListener('change', checkReasoningCapability);
     els.endpointSelect.addEventListener('change', applyEndpointPreset);
     els.jsonTemplateSelect.addEventListener('change', loadJsonTemplate);
@@ -639,6 +826,19 @@
 
     els.copyJsonCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.jsonCurlOutput.value || ''));
 
+    document.getElementById('historyToggle').addEventListener('click', () => {
+        const panel = document.getElementById('historyPanel');
+        const chevron = document.getElementById('historyChevron');
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? 'block' : 'none';
+        chevron.style.transform = open ? 'rotate(180deg)' : '';
+    });
+
+    document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+        localStorage.removeItem(STORAGE.HISTORY);
+        renderHistory();
+    });
+
     window.onload = () => {
         loadConfig();
         els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
@@ -646,6 +846,7 @@
         loadJsonTemplate();
         els.endpointResponse.textContent = 'Waiting for request...';
         els.jsonResponse.textContent = 'Waiting for request...';
+        renderHistory();
         setInterval(updateHardwareMetrics, 5000);
     };
 </script>
