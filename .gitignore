@@ -25,3 +25,4 @@ caddy_data/
 *.tmp
 *.log
 .env
+.wol-proxy-port

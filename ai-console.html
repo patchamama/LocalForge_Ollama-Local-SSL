@@ -136,7 +136,15 @@
         </div>
         <div class="form-group">
             <label>Endpoint URL</label>
-            <input type="text" id="apiUrl" placeholder="https://localhost:11443">
+            <div style="display:flex;gap:5px;align-items:center;">
+                <input type="text" id="apiUrl" placeholder="https://localhost:11443" style="flex:1">
+                <button class="btn-copy" id="saveEndpointBtn" title="Save this endpoint"><i class="bi bi-bookmark-plus"></i></button>
+            </div>
+            <div id="savedEndpointsWrap" style="margin-top:5px;display:none;gap:5px;align-items:center;">
+                <select id="savedEndpointsSelect" style="flex:1;font-size:0.83rem"></select>
+                <button class="btn-copy" id="loadEndpointBtn" title="Load selected endpoint"><i class="bi bi-box-arrow-in-down"></i></button>
+                <button class="btn-copy" id="deleteEndpointBtn" title="Delete selected endpoint" style="background:#c0392b"><i class="bi bi-trash"></i></button>
+            </div>
         </div>
         <div class="form-group">
             <label>API Key / Token
@@ -203,8 +211,61 @@
         </div>
     </div>
 
+    <div class="history-wrap" id="wolWrap">
+        <div class="history-header" id="wolToggle">
+            <span><i class="bi bi-power"></i> Wake-on-LAN</span>
+            <i class="bi bi-chevron-down" id="wolChevron" style="margin-left:auto;transition:transform 0.2s"></i>
+        </div>
+        <div id="wolPanel" style="display:none;margin-top:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                    <label>Target IP</label>
+                    <div style="display:flex;gap:5px">
+                        <input type="text" id="wolIp" placeholder="192.168.178.49" style="flex:1">
+                        <button class="btn-small" id="wolResolveBtn" style="white-space:nowrap;padding:0 10px">Resolve MAC</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>MAC Address</label>
+                    <input type="text" id="wolMac" placeholder="14:98:77:3a:6c:0e" style="font-family:'Fira Code','Consolas',monospace">
+                </div>
+                <div class="form-group">
+                    <label>Broadcast / FritzBox Host</label>
+                    <input type="text" id="wolBroadcast" placeholder="255.255.255.255 or fritz.box or dyndns.host" value="255.255.255.255">
+                </div>
+                <div class="form-group">
+                    <label>WOL Method</label>
+                    <select id="wolMethod">
+                        <option value="direct">Direct UDP (local network)</option>
+                        <option value="fritzbox">FritzBox TR-064 (local or DynDNS)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="wolFritzAuthGroup" style="display:none">
+                    <label>FritzBox User (optional)</label>
+                    <input type="text" id="wolFritzUser" placeholder="admin">
+                </div>
+                <div class="form-group" id="wolFritzPassGroup" style="display:none">
+                    <label>FritzBox Password</label>
+                    <input type="password" id="wolFritzPass" placeholder="••••••••">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn-main" id="wolWakeBtn" style="padding:10px 24px"><i class="bi bi-lightning-charge-fill"></i> Wake</button>
+                <span id="wolStatus" style="font-size:0.85rem;font-weight:600"></span>
+            </div>
+            <div style="margin-top:8px;font-size:0.78rem;color:var(--text-sec);line-height:1.5" id="wolNote">
+                <b>Direct UDP</b>: works only when this browser and the target are on the same LAN.<br>
+                <b>FritzBox TR-064</b>: works on LAN (<code>fritz.box</code>) or via DynDNS host if port 49000 is reachable. Requires WOL enabled in FritzBox → Home Network → Network → Device settings.
+            </div>
+        </div>
+    </div>
+
     <div class="tester-wrap">
-        <h3 style="margin:0 0 6px 0">API Testing Tabs</h3>
+        <div class="history-header" id="testerToggle" style="margin-bottom:0">
+            <span><i class="bi bi-terminal"></i> API Testing Tabs</span>
+            <i class="bi bi-chevron-down" id="testerChevron" style="margin-left:auto;transition:transform 0.2s"></i>
+        </div>
+        <div id="testerBody" style="display:none;margin-top:10px">
         <div class="tester-tabs">
             <button class="tester-tab-btn active" data-tester-tab="endpointPanel">Endpoint Tester</button>
             <button class="tester-tab-btn" data-tester-tab="jsonPanel">JSON Request Tester</button>
@@ -288,6 +349,7 @@
                 <div id="jsonResponse" class="tester-response">Waiting for request...</div>
             </div>
         </div>
+        </div><!-- /#testerBody -->
     </div>
 </div>
 
@@ -296,6 +358,7 @@
 
     let _activeRequests = 0;
     let _currentAbort = null;
+    let _serverOnline = true;
     let _timerInterval = null;
     let _timerStart = null;
 
@@ -338,8 +401,99 @@
         container.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
     }
 
-    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt', HISTORY: 'ai_console_history' };
+    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt', HISTORY: 'ai_console_history', KNOWN_HOSTS: 'ai_console_known_hosts', SAVED_ENDPOINTS: 'ai_console_saved_endpoints' };
     const MAX_HISTORY = 50;
+
+    // ── Known Hosts (MAC cache) ───────────────────────────────────────────────
+    function loadKnownHosts() {
+        try { return JSON.parse(localStorage.getItem(STORAGE.KNOWN_HOSTS) || '{}'); } catch { return {}; }
+    }
+
+    function saveKnownHost(host, mac) {
+        if (!host || !mac) return;
+        const hosts = loadKnownHosts();
+        hosts[host] = { mac, lastSeen: new Date().toISOString() };
+        localStorage.setItem(STORAGE.KNOWN_HOSTS, JSON.stringify(hosts));
+    }
+
+    function getCachedMac(host) {
+        return loadKnownHosts()[host]?.mac || null;
+    }
+
+    // ── Saved Endpoints ───────────────────────────────────────────────────────
+    function loadSavedEndpoints() {
+        try { return JSON.parse(localStorage.getItem(STORAGE.SAVED_ENDPOINTS) || '{}'); } catch { return {}; }
+    }
+
+    function currentSource() {
+        return Array.from(document.getElementsByName('source')).find(r => r.checked)?.value || 'docker';
+    }
+
+    function renderSavedEndpoints() {
+        const source = currentSource();
+        const all = loadSavedEndpoints();
+        const entries = Object.entries(all[source] || {});
+        const wrap = document.getElementById('savedEndpointsWrap');
+        const sel = document.getElementById('savedEndpointsSelect');
+        if (!entries.length) { wrap.style.display = 'none'; return; }
+        sel.innerHTML = entries.map(([name, url]) =>
+            `<option value="${url}">${name} — ${url}</option>`
+        ).join('');
+        wrap.style.display = 'flex';
+    }
+
+    function saveEndpoint(name, url) {
+        const source = currentSource();
+        const all = loadSavedEndpoints();
+        if (!all[source]) all[source] = {};
+        all[source][name] = url;
+        localStorage.setItem(STORAGE.SAVED_ENDPOINTS, JSON.stringify(all));
+        renderSavedEndpoints();
+    }
+
+    function deleteEndpoint(name) {
+        const source = currentSource();
+        const all = loadSavedEndpoints();
+        if (all[source]) { delete all[source][name]; }
+        localStorage.setItem(STORAGE.SAVED_ENDPOINTS, JSON.stringify(all));
+        renderSavedEndpoints();
+    }
+
+    // ── WOL Countdown ─────────────────────────────────────────────────────────
+    function startWolCountdown(seconds, onDone) {
+        const statusEl = document.getElementById('wolStatus');
+        let remaining = seconds;
+        let done = false;
+
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearInterval(iv);
+            clearInterval(checkIv);
+            onDone();
+        };
+
+        const checkServer = async () => {
+            try {
+                const res = await fetch(`${els.apiUrl.value}/api/tags`, { signal: AbortSignal.timeout(3000) });
+                if (res.ok) {
+                    wolSetStatus('Device is online!', '#2ecc71');
+                    finish();
+                }
+            } catch { /* still offline */ }
+        };
+
+        const iv = setInterval(() => {
+            remaining--;
+            statusEl.textContent = `Waiting for device to wake... ${remaining}s`;
+            statusEl.style.color = '#f39c12';
+            if (remaining <= 0) finish();
+        }, 1000);
+
+        // Check every 10s
+        const checkIv = setInterval(checkServer, 10000);
+    }
+
     const API_TESTER_EXAMPLES = {
         models: { path: '/v1/models', method: 'GET' },
         tags: { path: '/api/tags', method: 'GET' },
@@ -581,16 +735,34 @@
     async function loadModels() {
         const source = Array.from(els.radios).find(r => r.checked).value;
         if (source === 'custom') return;
+        els.modelSelect.innerHTML = '<option disabled selected>Loading...</option>';
         try {
-            const res = await fetch(`${els.apiUrl.value}/api/tags`);
+            const res = await fetch(`${els.apiUrl.value}/api/tags`, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) {
+                // Server is reachable but returned an error (4xx/5xx) — not an offline condition
+                els.modelSelect.innerHTML = '';
+                els.statusDot.className = 'status-dot';
+                els.statusText.innerText = `Error ${res.status}`;
+                return;
+            }
             const data = await res.json();
-            els.modelSelect.innerHTML = data.models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+            const models = data.models || [];
+            if (models.length) {
+                els.modelSelect.innerHTML = models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+            } else {
+                els.modelSelect.innerHTML = '';
+            }
+            _serverOnline = true;
             els.statusDot.className = 'status-dot status-online';
             els.statusText.innerText = 'Online';
+            els.badge.textContent = 'Standby';
+            els.badge.style.background = '#95a5a6';
             checkReasoningCapability();
+            cacheHostMacSilently();
         } catch (e) {
-            els.statusDot.className = 'status-dot';
-            els.statusText.innerText = 'Offline / Error';
+            // Only network errors / timeouts reach here — true offline
+            els.modelSelect.innerHTML = '';
+            setServerOffline();
         }
     }
 
@@ -721,11 +893,173 @@
         }
     }
 
+    function extractHost(url) {
+        try { return new URL(url).hostname; } catch { return url; }
+    }
+
+    function isLocalAddress(host) {
+        if (!host) return false;
+        if (host === 'localhost') return true;
+        if (/^127\./.test(host)) return true;
+        if (/^10\./.test(host)) return true;
+        if (/^192\.168\./.test(host)) return true;
+        if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+        return false;
+    }
+
+    // localhost and 127.x are this machine — WOL makes no sense
+    function isWolTarget(host) {
+        if (!host) return false;
+        if (host === 'localhost') return false;
+        if (/^127\./.test(host)) return false;
+        return true;
+    }
+
+    function openWolPanel() {
+        const panel = document.getElementById('wolPanel');
+        const chevron = document.getElementById('wolChevron');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            chevron.style.transform = 'rotate(180deg)';
+        }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function cacheHostMacSilently() {
+        const host = extractHost(els.apiUrl.value);
+        if (!host || !isLocalAddress(host) || !isWolTarget(host)) return;
+        if (getCachedMac(host)) return; // already cached
+        try {
+            const r = await fetch(wolProxyUrl(`/wol/resolve?ip=${encodeURIComponent(host)}`), { signal: AbortSignal.timeout(6000) });
+            const data = await r.json();
+            if (data.ok) {
+                saveKnownHost(host, data.mac);
+                document.getElementById('wolMac').value = data.mac;
+                document.getElementById('wolIp').value = host;
+                console.log(`[WOL] MAC cached for ${host}: ${data.mac}`);
+            }
+        } catch { /* proxy not running — silent */ }
+    }
+
+    async function sendWolPacket(host, mac) {
+        const local = isLocalAddress(host);
+        if (local) {
+            const r = await fetch(wolProxyUrl('/wol/wake'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mac, broadcast: '255.255.255.255' }),
+                signal: AbortSignal.timeout(6000)
+            });
+            return r.json();
+        } else {
+            const r = await fetch(wolProxyUrl('/wol/fritzbox'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    host,
+                    mac,
+                    user: document.getElementById('wolFritzUser').value.trim(),
+                    password: document.getElementById('wolFritzPass').value
+                }),
+                signal: AbortSignal.timeout(10000)
+            });
+            return r.json();
+        }
+    }
+
+    async function autoWol() {
+        const host = extractHost(els.apiUrl.value);
+        if (!host || !isWolTarget(host)) return;
+
+        const local = isLocalAddress(host);
+        openWolPanel();
+        document.getElementById('wolIp').value = host;
+
+        if (local) {
+            document.getElementById('wolMethod').value = 'direct';
+            document.getElementById('wolBroadcast').value = '255.255.255.255';
+            document.getElementById('wolFritzAuthGroup').style.display = 'none';
+            document.getElementById('wolFritzPassGroup').style.display = 'none';
+
+            // Try cached MAC first
+            let mac = getCachedMac(host);
+            if (mac) {
+                document.getElementById('wolMac').value = mac;
+                wolSetStatus(`Offline — using cached MAC ${mac}, sending Magic Packet...`, 'var(--text-sec)');
+            } else {
+                wolSetStatus('Offline detected — resolving MAC...', 'var(--text-sec)');
+                try {
+                    const r = await fetch(wolProxyUrl(`/wol/resolve?ip=${encodeURIComponent(host)}`), { signal: AbortSignal.timeout(6000) });
+                    const data = await r.json();
+                    if (data.ok) {
+                        mac = data.mac;
+                        saveKnownHost(host, mac);
+                        document.getElementById('wolMac').value = mac;
+                        wolSetStatus(`MAC resolved: ${mac} — sending Magic Packet...`, 'var(--text-sec)');
+                    } else {
+                        wolSetStatus(`Could not resolve MAC for ${host}. Enter it manually and click Wake.`, 'orange');
+                        return;
+                    }
+                } catch (e) {
+                    wolSetStatus(`Proxy unreachable (${e.message}). Is wol-proxy.py running?`, '#e74c3c');
+                    return;
+                }
+            }
+            try {
+                const wd = await sendWolPacket(host, mac);
+                if (wd.ok) {
+                    startWolCountdown(30, () => { _serverOnline = true; loadModels(); });
+                } else {
+                    wolSetStatus(`WOL error: ${wd.error || JSON.stringify(wd)}`, '#e74c3c');
+                }
+            } catch (e) {
+                wolSetStatus(`Proxy unreachable (${e.message}). Is wol-proxy.py running?`, '#e74c3c');
+            }
+        } else {
+            // Remote — use FritzBox TR-064
+            document.getElementById('wolMethod').value = 'fritzbox';
+            document.getElementById('wolBroadcast').value = host;
+            document.getElementById('wolFritzAuthGroup').style.display = 'block';
+            document.getElementById('wolFritzPassGroup').style.display = 'block';
+            const mac = getCachedMac(host) || document.getElementById('wolMac').value.trim();
+            if (mac) document.getElementById('wolMac').value = mac;
+            if (!mac) {
+                wolSetStatus(`Offline detected — enter MAC address and FritzBox credentials, then click Wake.`, 'orange');
+                return;
+            }
+            wolSetStatus(`Offline detected — sending WOL via FritzBox (${host})...`, 'var(--text-sec)');
+            try {
+                const data = await sendWolPacket(host, mac);
+                if (data.ok) {
+                    startWolCountdown(30, () => { _serverOnline = true; loadModels(); });
+                } else {
+                    wolSetStatus(`FritzBox WOL error: ${data.error || data.detail || JSON.stringify(data)}`, '#e74c3c');
+                }
+            } catch (e) {
+                wolSetStatus(`Proxy unreachable (${e.message}). Is wol-proxy.py running?`, '#e74c3c');
+            }
+        }
+    }
+
+    function setServerOffline() {
+        if (_serverOnline) {
+            _serverOnline = false;
+            els.statusDot.className = 'status-dot';
+            els.statusText.innerText = 'Offline';
+            els.badge.textContent = 'Offline';
+            els.badge.style.background = '#e74c3c';
+            els.mVram.textContent = 'Memory: -';
+            autoWol();
+        }
+    }
+
     async function updateHardwareMetrics() {
         const source = Array.from(els.radios).find(r => r.checked).value;
         if (source === 'custom') return;
+        if (!_serverOnline) return;
         try {
-            const res = await fetch(`${els.apiUrl.value}/api/ps`);
+            const res = await fetch(`${els.apiUrl.value}/api/ps`, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) return; // 4xx/5xx — server reachable, not offline
             const data = await res.json();
             const model = data.models?.find(m => els.modelSelect.value.startsWith(m.name));
             if (model) {
@@ -752,10 +1086,13 @@
                 els.badge.style.background = '#95a5a6';
                 els.mVram.textContent = 'Memory: -';
             }
-        } catch (e) {}
+        } catch (e) {
+            // /api/ps errors don't indicate offline — only /api/tags does
+        }
     }
 
     els.radios.forEach(r => r.addEventListener('change', () => {
+        _serverOnline = true;
         const existing = JSON.parse(localStorage.getItem(STORAGE.CONFIG) || '{}');
         handleSourceChange(existing.urls || {});
     }));
@@ -764,7 +1101,15 @@
     let _urlDebounce;
     els.apiUrl.addEventListener('input', () => {
         clearTimeout(_urlDebounce);
-        _urlDebounce = setTimeout(() => { saveConfig(); loadModels(); }, 800);
+        els.modelSelect.innerHTML = '<option disabled selected>Loading...</option>';
+        _urlDebounce = setTimeout(() => {
+            _serverOnline = true;
+            const host = extractHost(els.apiUrl.value);
+            document.getElementById('wolIp').value = host;
+            document.getElementById('wolBroadcast').value = isLocalAddress(host) ? '255.255.255.255' : host;
+            document.getElementById('wolMethod').value = isLocalAddress(host) ? 'direct' : 'fritzbox';
+            saveConfig(); loadModels();
+        }, 800);
     });
 
     document.getElementById('refreshModelsBtn').addEventListener('click', async () => {
@@ -826,6 +1171,106 @@
 
     els.copyJsonCurlBtn.addEventListener('click', () => navigator.clipboard.writeText(els.jsonCurlOutput.value || ''));
 
+    // ── WOL panel ────────────────────────────────────────────────────────────
+
+    let _wolProxyPort = 9999;
+
+    async function detectWolProxy() {
+        for (let p = 9999; p <= 10010; p++) {
+            try {
+                const r = await fetch(`http://127.0.0.1:${p}/health`, { signal: AbortSignal.timeout(400) });
+                if (r.ok) { _wolProxyPort = p; return true; }
+            } catch { /* try next */ }
+        }
+        return false;
+    }
+
+    function wolProxyUrl(path) {
+        return `http://127.0.0.1:${_wolProxyPort}${path}`;
+    }
+
+    function wolSetStatus(msg, color) {
+        const el = document.getElementById('wolStatus');
+        el.textContent = msg;
+        el.style.color = color || 'var(--text-sec)';
+    }
+
+    document.getElementById('wolToggle').addEventListener('click', () => {
+        const panel = document.getElementById('wolPanel');
+        const chevron = document.getElementById('wolChevron');
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? 'block' : 'none';
+        chevron.style.transform = open ? 'rotate(180deg)' : '';
+    });
+
+    document.getElementById('wolMethod').addEventListener('change', () => {
+        const isFritz = document.getElementById('wolMethod').value === 'fritzbox';
+        document.getElementById('wolFritzAuthGroup').style.display = isFritz ? 'block' : 'none';
+        document.getElementById('wolFritzPassGroup').style.display = isFritz ? 'block' : 'none';
+        if (isFritz && !document.getElementById('wolBroadcast').value.includes('.')) {
+            document.getElementById('wolBroadcast').value = 'fritz.box';
+        }
+    });
+
+    document.getElementById('wolResolveBtn').addEventListener('click', async () => {
+        const ip = document.getElementById('wolIp').value.trim();
+        if (!ip) { wolSetStatus('Enter a target IP first.', 'orange'); return; }
+        wolSetStatus('Resolving...', 'var(--text-sec)');
+        try {
+            const r = await fetch(wolProxyUrl(`/wol/resolve?ip=${encodeURIComponent(ip)}`), { signal: AbortSignal.timeout(6000) });
+            const data = await r.json();
+            if (data.ok) {
+                document.getElementById('wolMac').value = data.mac;
+                saveKnownHost(ip, data.mac);
+                wolSetStatus(`MAC resolved and cached: ${data.mac}`, '#2ecc71');
+            } else {
+                wolSetStatus(data.error || 'MAC not found.', 'orange');
+            }
+        } catch (e) {
+            wolSetStatus(`Proxy unreachable. Is wol-proxy.py running? (${e.message})`, '#e74c3c');
+        }
+    });
+
+    document.getElementById('wolWakeBtn').addEventListener('click', async () => {
+        const mac = document.getElementById('wolMac').value.trim();
+        const broadcast = document.getElementById('wolBroadcast').value.trim() || '255.255.255.255';
+        const method = document.getElementById('wolMethod').value;
+        if (!mac) { wolSetStatus('Enter or resolve a MAC address first.', 'orange'); return; }
+
+        wolSetStatus('Sending Magic Packet...', 'var(--text-sec)');
+        try {
+            let r, data;
+            if (method === 'fritzbox') {
+                r = await fetch(wolProxyUrl('/wol/fritzbox'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        host: broadcast,
+                        mac,
+                        user: document.getElementById('wolFritzUser').value.trim(),
+                        password: document.getElementById('wolFritzPass').value
+                    }),
+                    signal: AbortSignal.timeout(10000)
+                });
+            } else {
+                r = await fetch(wolProxyUrl('/wol/wake'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mac, broadcast }),
+                    signal: AbortSignal.timeout(6000)
+                });
+            }
+            data = await r.json();
+            if (data.ok) {
+                startWolCountdown(30, () => { _serverOnline = true; loadModels(); });
+            } else {
+                wolSetStatus(`Error: ${data.error || data.detail || JSON.stringify(data)}`, '#e74c3c');
+            }
+        } catch (e) {
+            wolSetStatus(`Proxy unreachable. Is wol-proxy.py running? (${e.message})`, '#e74c3c');
+        }
+    });
+
     document.getElementById('historyToggle').addEventListener('click', () => {
         const panel = document.getElementById('historyPanel');
         const chevron = document.getElementById('historyChevron');
@@ -839,15 +1284,69 @@
         renderHistory();
     });
 
-    window.onload = () => {
+    // ── API Tester toggle ─────────────────────────────────────────────────────
+    document.getElementById('testerToggle').addEventListener('click', () => {
+        const body = document.getElementById('testerBody');
+        const chevron = document.getElementById('testerChevron');
+        const open = body.style.display === 'none';
+        body.style.display = open ? 'block' : 'none';
+        chevron.style.transform = open ? 'rotate(180deg)' : '';
+    });
+
+    // ── Saved Endpoints ───────────────────────────────────────────────────────
+    document.getElementById('saveEndpointBtn').addEventListener('click', () => {
+        const url = els.apiUrl.value.trim();
+        if (!url) return;
+        const name = prompt('Name for this endpoint:', extractHost(url));
+        if (!name) return;
+        saveEndpoint(name.trim(), url);
+    });
+
+    document.getElementById('loadEndpointBtn').addEventListener('click', () => {
+        const sel = document.getElementById('savedEndpointsSelect');
+        if (!sel.value) return;
+        els.apiUrl.value = sel.value;
+        els.apiUrl.dispatchEvent(new Event('input'));
+    });
+
+    document.getElementById('deleteEndpointBtn').addEventListener('click', () => {
+        const sel = document.getElementById('savedEndpointsSelect');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt) return;
+        const name = opt.text.split(' — ')[0];
+        deleteEndpoint(name);
+    });
+
+    // Re-render saved endpoints when source changes
+    els.radios.forEach(r => r.addEventListener('change', () => renderSavedEndpoints(), { passive: true }));
+
+    window.onload = async () => {
         loadConfig();
+        renderSavedEndpoints();
         els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
         applyEndpointPreset();
         loadJsonTemplate();
         els.endpointResponse.textContent = 'Waiting for request...';
         els.jsonResponse.textContent = 'Waiting for request...';
         renderHistory();
+        // Pre-populate WOL fields from current endpoint
+        const host = extractHost(els.apiUrl.value);
+        if (host) {
+            document.getElementById('wolIp').value = host;
+            document.getElementById('wolBroadcast').value = isLocalAddress(host) ? '255.255.255.255' : host;
+            document.getElementById('wolMethod').value = isLocalAddress(host) ? 'direct' : 'fritzbox';
+            const fa = document.getElementById('wolFritzAuthGroup');
+            const fp = document.getElementById('wolFritzPassGroup');
+            const remote = !isLocalAddress(host);
+            fa.style.display = remote ? 'block' : 'none';
+            fp.style.display = remote ? 'block' : 'none';
+        }
         setInterval(updateHardwareMetrics, 5000);
+        const proxyFound = await detectWolProxy();
+        if (!proxyFound) {
+            document.getElementById('wolNote').innerHTML +=
+                '<br><span style="color:#e74c3c"><b>WOL proxy not detected.</b> Run <code>./start-ai-console.sh</code> or <code>python3 wol-proxy.py</code> to enable this feature.</span>';
+        }
     };
 </script>
 </body>
