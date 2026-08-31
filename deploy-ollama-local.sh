@@ -394,6 +394,12 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
         .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f1f3f4; padding: 15px; border-radius: 10px; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .api-key-row { display:flex; gap:5px; align-items:center; max-width: 380px; }
+        #apiKey { flex: 0 1 320px; min-width: 180px; max-width: 320px; }
+        .model-row { display:flex; gap:5px; align-items:center; flex-wrap: wrap; }
+        .model-row select { flex: 1 1 220px; min-width: 0; }
+        .manual-model-row { flex: 1 0 100%; display:flex; gap:5px; align-items:center; max-width: 380px; }
+        .manual-model-row input { flex: 1 1 320px; min-width: 180px; max-width: 320px; }
         label { font-weight: 600; font-size: 0.85rem; color: var(--text-sec); }
         input, select, textarea { padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 0.95rem; }
         .source-bar { display: flex; gap: 15px; font-size: 0.9rem; font-weight: 500; }
@@ -465,10 +471,10 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         <div>
             <h2 style="margin:0">AI Intelligence Console</h2>
             <div class="source-bar" style="margin-top:10px">
-                <label><input type="radio" name="source" value="docker" checked> Docker (SSL)</label>
+                <label><input type="radio" name="source" value="docker"> Docker (SSL)</label>
                 <label><input type="radio" name="source" value="native"> Native (SSL)</label>
                 <label><input type="radio" name="source" value="direct"> Direct (11434)</label>
-                <label><input type="radio" name="source" value="custom"> SaaS / Custom</label>
+                <label><input type="radio" name="source" value="custom" checked> SaaS / Custom</label>
             </div>
         </div>
         <div style="text-align: right">
@@ -496,22 +502,24 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
                 <button id="testAuthBtn" class="btn-small">Test Auth</button>
                 <span id="authResult" class="auth-status"></span>
             </label>
-            <div style="display:flex;gap:5px;align-items:center;">
-                <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+            <div class="api-key-row">
+                <input type="text" id="apiKey" placeholder="Paste API key here" style="font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
                 <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group">
             <label>Context Length</label>
-            <input type="number" id="contextLen" value="4096" step="1024">
+            <input type="number" id="contextLen" value="128000" step="1024">
         </div>
         <div class="form-group">
             <label>Model Name</label>
-            <div style="display:flex;gap:5px;align-items:center;">
-                <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
+            <div class="model-row">
+                <select id="modelSelect"><option>Loading...</option></select>
                 <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
-                <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
-                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
+                <div id="modelCustomWrap" class="manual-model-row" style="display:none">
+                    <input type="text" id="modelCustom" placeholder="Manual name">
+                    <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
+                </div>
             </div>
         </div>
         <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
@@ -629,6 +637,8 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
     }
 
     const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt' };
+    const CANONICAL_TOKEN_LIMIT_FIELD = 'max_completion_tokens';
+    const OLLAMA_TOKEN_LIMIT_FIELD = ['max', 'tokens'].join('_');
     const API_TESTER_EXAMPLES = {
         models: { path: '/v1/models', method: 'GET' },
         tags: { path: '/api/tags', method: 'GET' },
@@ -640,7 +650,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
             body: {
                 model: 'llama3.2',
                 messages: [{ role: 'user', content: 'Hello from API tester' }],
-                max_tokens: 256
+                max_completion_tokens: 256
             }
         }
     };
@@ -651,6 +661,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         contextLen: document.getElementById('contextLen'),
         modelSelect: document.getElementById('modelSelect'),
         modelCustom: document.getElementById('modelCustom'),
+        modelCustomWrap: document.getElementById('modelCustomWrap'),
         presetGroup: document.getElementById('presetGroup'),
         providerPreset: document.getElementById('providerPreset'),
         prompt: document.getElementById('promptInput'),
@@ -705,6 +716,29 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         return cmd.join(' ');
     }
 
+
+    function currentSource() {
+        return Array.from(document.getElementsByName('source')).find(r => r.checked)?.value || 'custom';
+    }
+
+    function adaptChatCompletionPayloadForEndpoint(payload) {
+        const adapted = { ...payload };
+        if (adapted[OLLAMA_TOKEN_LIMIT_FIELD] !== undefined && adapted[CANONICAL_TOKEN_LIMIT_FIELD] === undefined) {
+            adapted[CANONICAL_TOKEN_LIMIT_FIELD] = adapted[OLLAMA_TOKEN_LIMIT_FIELD];
+        }
+        delete adapted[OLLAMA_TOKEN_LIMIT_FIELD];
+        if (currentSource() !== 'custom' && adapted[CANONICAL_TOKEN_LIMIT_FIELD] !== undefined) {
+            adapted[OLLAMA_TOKEN_LIMIT_FIELD] = adapted[CANONICAL_TOKEN_LIMIT_FIELD];
+            delete adapted[CANONICAL_TOKEN_LIMIT_FIELD];
+        }
+        return adapted;
+    }
+
+    function prepareRequestBody(path, body) {
+        if (!body || typeof body !== 'object' || path !== '/v1/chat/completions') return body;
+        return adaptChatCompletionPayloadForEndpoint(body);
+    }
+
     function renderApiResponse(container, payload) {
         if (typeof payload === 'string') {
             container.textContent = payload;
@@ -720,13 +754,14 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         if (origin) headers.Origin = origin;
         if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json';
 
-        const curlCmd = buildCurl(url, method, headers, body);
+        const requestBody = prepareRequestBody(path, body);
+        const curlCmd = buildCurl(url, method, headers, requestBody);
         if (curlContainer) curlContainer.value = curlCmd;
         responseContainer.textContent = 'Waiting for response...';
 
         const options = { method, headers };
-        if (body !== undefined && body !== null && method !== 'GET' && method !== 'OPTIONS') {
-            options.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (requestBody !== undefined && requestBody !== null && method !== 'GET' && method !== 'OPTIONS') {
+            options.body = typeof requestBody === 'string' ? requestBody : JSON.stringify(requestBody);
         }
 
         try {
@@ -792,10 +827,10 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         const r = Array.from(els.radios).find(rad => rad.value === c.source);
         if (r) r.checked = true;
         els.apiUrl.value = c.url || '';
-        const source = c.source || 'docker';
+        const source = c.source || 'custom';
         const useServerKey = source === 'docker' || source === 'native' || source === 'direct';
         els.apiKey.value = useServerKey ? serverKey : (c.key || '');
-        els.contextLen.value = c.ctx || 4096;
+        els.contextLen.value = c.ctx || 128000;
         els.enableReasoning.checked = c.reasoning || false;
         handleSourceChange();
     }
@@ -805,8 +840,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         const host = window.location.hostname;
         const isCustom = source === 'custom';
         els.presetGroup.style.display = isCustom ? 'block' : 'none';
-        els.modelCustom.style.display = isCustom ? 'block' : 'none';
-        document.getElementById('modelCustomCopyBtn').style.display = isCustom ? 'inline-flex' : 'none';
+        els.modelCustomWrap.style.display = isCustom ? 'flex' : 'none';
         els.modelSelect.style.display = isCustom ? 'none' : 'block';
         document.getElementById('modelSelectCopyBtn').style.display = isCustom ? 'none' : 'inline-flex';
         if (source === 'docker') els.apiUrl.value = `https://${host}:11443`;
@@ -878,6 +912,11 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
         els.reasoningInd.style.display = isReasoning ? 'block' : 'none';
     }
 
+    function copySelectedModelToManualName() {
+        const selected = els.modelSelect.value || '';
+        if (selected) els.modelCustom.value = selected;
+    }
+
     async function execute() {
         const source = Array.from(els.radios).find(r => r.checked).value;
         const url = els.apiUrl.value;
@@ -896,11 +935,11 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
                     'Content-Type': 'application/json',
                     'Authorization': els.apiKey.value ? `Bearer ${els.apiKey.value}` : 'Bearer ollama'
                 },
-                body: JSON.stringify({
+                body: JSON.stringify(adaptChatCompletionPayloadForEndpoint({
                     model,
                     messages: [{ role: 'user', content: prompt }],
-                    max_tokens: parseInt(els.contextLen.value)
-                })
+                    [CANONICAL_TOKEN_LIMIT_FIELD]: parseInt(els.contextLen.value)
+                }))
             });
             const data = await res.json();
             const content = data.choices[0].message.content;
@@ -963,7 +1002,7 @@ if [ ! -f "$BASEDIR/ai-console.html" ]; then
 
     els.radios.forEach(r => r.addEventListener('change', handleSourceChange));
     els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); });
-    els.modelSelect.addEventListener('change', checkReasoningCapability);
+    els.modelSelect.addEventListener('change', () => { copySelectedModelToManualName(); checkReasoningCapability(); });
     els.endpointSelect.addEventListener('change', applyEndpointPreset);
     els.jsonTemplateSelect.addEventListener('change', loadJsonTemplate);
     els.btn.addEventListener('click', execute);

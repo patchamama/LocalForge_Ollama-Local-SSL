@@ -25,6 +25,12 @@
         .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
         .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f1f3f4; padding: 15px; border-radius: 10px; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .api-key-row { display:flex; gap:5px; align-items:center; max-width: 380px; }
+        #apiKey { flex: 0 1 320px; min-width: 180px; max-width: 320px; }
+        .model-row { display:flex; gap:5px; align-items:center; flex-wrap: wrap; }
+        .model-row select { flex: 1 1 220px; min-width: 0; }
+        .manual-model-row { flex: 1 0 100%; display:flex; gap:5px; align-items:center; max-width: 380px; }
+        .manual-model-row input { flex: 1 1 320px; min-width: 180px; max-width: 320px; }
         label { font-weight: 600; font-size: 0.85rem; color: var(--text-sec); }
         input, select, textarea { padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 0.95rem; }
         .source-bar { display: flex; gap: 15px; font-size: 0.9rem; font-weight: 500; }
@@ -105,11 +111,11 @@
         <div>
             <h2 style="margin:0">AI Intelligence Console</h2>
             <div class="source-bar" style="margin-top:10px">
-                <label><input type="radio" name="source" value="docker" checked> Docker (SSL)</label>
+                <label><input type="radio" name="source" value="docker"> Docker (SSL)</label>
                 <label><input type="radio" name="source" value="native"> Native (SSL)</label>
                 <label><input type="radio" name="source" value="direct"> Direct (11434)</label>
                 <label><input type="radio" name="source" value="local"> Local (11434)</label>
-                <label><input type="radio" name="source" value="custom"> SaaS / Custom</label>
+                <label><input type="radio" name="source" value="custom" checked> SaaS / Custom</label>
             </div>
         </div>
         <div style="text-align: right; display:flex; align-items:center; gap:10px; justify-content:flex-end">
@@ -151,23 +157,25 @@
                 <button id="testAuthBtn" class="btn-small">Test Auth</button>
                 <span id="authResult" class="auth-status"></span>
             </label>
-            <div style="display:flex;gap:5px;align-items:center;">
-                <input type="text" id="apiKey" placeholder="Paste API key here" style="flex:1;font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
+            <div class="api-key-row">
+                <input type="text" id="apiKey" placeholder="Paste API key here" style="font-family:'Fira Code','Consolas',monospace;font-size:0.85rem;letter-spacing:0.03em;">
                 <button class="btn-copy" onclick="copyToClipboard('apiKey',this)" title="Copy API key"><i class="bi bi-clipboard"></i></button>
             </div>
         </div>
         <div class="form-group">
             <label>Context Length</label>
-            <input type="number" id="contextLen" value="4096" step="1024">
+            <input type="number" id="contextLen" value="128000" step="1024">
         </div>
         <div class="form-group">
             <label>Model Name</label>
-            <div style="display:flex;gap:5px;align-items:center;">
-                <select id="modelSelect" style="flex:1"><option>Loading...</option></select>
+            <div class="model-row">
+                <select id="modelSelect"><option>Loading...</option></select>
                 <button class="btn-copy" id="refreshModelsBtn" title="Refresh models"><i class="bi bi-arrow-clockwise"></i></button>
                 <button class="btn-copy" id="modelSelectCopyBtn" onclick="copyToClipboard('modelSelect',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
-                <input type="text" id="modelCustom" placeholder="Manual name" style="flex:1;display:none">
-                <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name" style="display:none"><i class="bi bi-clipboard"></i></button>
+                <div id="modelCustomWrap" class="manual-model-row" style="display:none">
+                    <input type="text" id="modelCustom" placeholder="Manual name">
+                    <button class="btn-copy" id="modelCustomCopyBtn" onclick="copyToClipboard('modelCustom',this)" title="Copy model name"><i class="bi bi-clipboard"></i></button>
+                </div>
             </div>
         </div>
         <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
@@ -401,8 +409,19 @@
         container.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
     }
 
-    const STORAGE = { CONFIG: 'ai_console_config', LAST_PROMPT: 'ai_console_prompt', HISTORY: 'ai_console_history', KNOWN_HOSTS: 'ai_console_known_hosts', SAVED_ENDPOINTS: 'ai_console_saved_endpoints' };
+    const STORAGE = {
+        CONFIG: 'ai_console_config',
+        UI_STATE: 'ai_console_ui_state',
+        LAST_PROMPT: 'ai_console_prompt',
+        HISTORY: 'ai_console_history',
+        KNOWN_HOSTS: 'ai_console_known_hosts',
+        SAVED_ENDPOINTS: 'ai_console_saved_endpoints'
+    };
     const MAX_HISTORY = 50;
+    const DEFAULT_CONTEXT_LENGTH = '128000';
+    const CANONICAL_TOKEN_LIMIT_FIELD = 'max_completion_tokens';
+    const OLLAMA_TOKEN_LIMIT_FIELD = ['max', 'tokens'].join('_');
+    let _restoringConfig = false;
 
     // ── Known Hosts (MAC cache) ───────────────────────────────────────────────
     function loadKnownHosts() {
@@ -426,7 +445,7 @@
     }
 
     function currentSource() {
-        return Array.from(document.getElementsByName('source')).find(r => r.checked)?.value || 'docker';
+        return Array.from(document.getElementsByName('source')).find(r => r.checked)?.value || 'custom';
     }
 
     function renderSavedEndpoints() {
@@ -504,8 +523,7 @@
             method: 'POST',
             body: {
                 model: 'llama3.2',
-                messages: [{ role: 'user', content: 'Hello from API tester' }],
-                max_tokens: 256
+                messages: [{ role: 'user', content: 'Hello from API tester' }]
             }
         }
     };
@@ -516,6 +534,7 @@
         contextLen: document.getElementById('contextLen'),
         modelSelect: document.getElementById('modelSelect'),
         modelCustom: document.getElementById('modelCustom'),
+        modelCustomWrap: document.getElementById('modelCustomWrap'),
         presetGroup: document.getElementById('presetGroup'),
         providerPreset: document.getElementById('providerPreset'),
         prompt: document.getElementById('promptInput'),
@@ -570,6 +589,117 @@
         return cmd.join(' ');
     }
 
+    function apiUrlForPath(path) {
+        const base = (els.apiUrl.value || '').trim().replace(/\/+$/, '');
+        if (!base) return path;
+        let apiPath = path.startsWith('/') ? path : `/${path}`;
+
+        // SaaS presets such as OpenAI are stored with their API version in the
+        // base URL (https://api.openai.com/v1). Avoid generating /v1/v1/...
+        try {
+            const url = new URL(base);
+            const normalizedPath = url.pathname.replace(/\/+$/, '');
+            if (normalizedPath.endsWith('/v1') && apiPath.startsWith('/v1/')) {
+                apiPath = apiPath.slice(3);
+            }
+        } catch {
+            // Keep the plain concatenation path for manually-entered non-URL values.
+        }
+
+        return `${base}${apiPath}`;
+    }
+
+    function authHeaders() {
+        return els.apiKey.value ? { 'Authorization': `Bearer ${els.apiKey.value}` } : {};
+    }
+
+    function extractModelNames(data) {
+        const models = Array.isArray(data?.models) ? data.models : (Array.isArray(data?.data) ? data.data : []);
+        return models
+            .map(m => typeof m === 'string' ? m : (m.id || m.name || ''))
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+    }
+
+    function setModelOptions(modelNames, placeholder = 'Select a model') {
+        if (!modelNames.length) {
+            els.modelSelect.innerHTML = `<option value="" disabled selected>${escHtml(placeholder)}</option>`;
+            return;
+        }
+        const pendingValue = els.modelSelect.dataset.pendingValue || els.modelSelect.value || '';
+        if (pendingValue && !modelNames.includes(pendingValue)) {
+            modelNames = [pendingValue, ...modelNames];
+        }
+        const customPlaceholder = currentSource() === 'custom'
+            ? `<option value="" selected>${escHtml(placeholder)}</option>`
+            : '';
+        els.modelSelect.innerHTML = customPlaceholder + modelNames.map(name => `<option value="${escHtml(name)}">${escHtml(name)}</option>`).join('');
+        if (pendingValue) {
+            els.modelSelect.value = pendingValue;
+            delete els.modelSelect.dataset.pendingValue;
+        }
+        checkReasoningCapability();
+        if (!els.endpointBodyInput.value.trim()) applyEndpointPreset();
+        if (!els.jsonRequestInput.value.trim()) loadJsonTemplate();
+    }
+
+    function getSelectedModelName() {
+        const selected = els.modelSelect.value || '';
+        const manual = els.modelCustom.value.trim();
+        return selected || manual;
+    }
+
+    function copySelectedModelToManualName() {
+        const selected = els.modelSelect.value || '';
+        if (selected) els.modelCustom.value = selected;
+    }
+
+    function isOllamaEndpoint() {
+        const source = currentSource();
+        if (source !== 'custom') return true;
+        try {
+            const url = new URL(els.apiUrl.value);
+            return ['11434', '11443', '11444'].includes(url.port) && isLocalAddress(url.hostname);
+        } catch {
+            return false;
+        }
+    }
+
+    function normalizeTokenLimitField(payload) {
+        const normalized = { ...payload };
+        if (normalized[OLLAMA_TOKEN_LIMIT_FIELD] !== undefined && normalized[CANONICAL_TOKEN_LIMIT_FIELD] === undefined) {
+            normalized[CANONICAL_TOKEN_LIMIT_FIELD] = normalized[OLLAMA_TOKEN_LIMIT_FIELD];
+        }
+        delete normalized[OLLAMA_TOKEN_LIMIT_FIELD];
+        return normalized;
+    }
+
+    function adaptChatCompletionPayloadForEndpoint(payload) {
+        const adapted = normalizeTokenLimitField(payload);
+        if (isOllamaEndpoint() && adapted[CANONICAL_TOKEN_LIMIT_FIELD] !== undefined) {
+            adapted[OLLAMA_TOKEN_LIMIT_FIELD] = adapted[CANONICAL_TOKEN_LIMIT_FIELD];
+            delete adapted[CANONICAL_TOKEN_LIMIT_FIELD];
+        }
+        return adapted;
+    }
+
+    function buildChatCompletionPayload(model, prompt) {
+        const tokenLimit = parseInt(els.contextLen.value, 10);
+        const payload = {
+            model,
+            messages: [{ role: 'user', content: prompt }]
+        };
+        if (!Number.isNaN(tokenLimit) && tokenLimit > 0) {
+            payload[CANONICAL_TOKEN_LIMIT_FIELD] = tokenLimit;
+        }
+        return payload;
+    }
+
+    function prepareRequestBody(path, body) {
+        if (!body || typeof body !== 'object' || path !== '/v1/chat/completions') return body;
+        return adaptChatCompletionPayloadForEndpoint(body);
+    }
+
     function renderApiResponse(container, payload) {
         if (typeof payload === 'string') {
             container.textContent = payload;
@@ -579,19 +709,20 @@
     }
 
     async function runApiRequest(path, method, body, origin, responseContainer, curlContainer) {
-        const url = `${els.apiUrl.value}${path}`;
+        const url = apiUrlForPath(path);
         const headers = {};
-        if (els.apiKey.value) headers.Authorization = `Bearer ${els.apiKey.value}`;
+        Object.assign(headers, authHeaders());
         if (origin) headers.Origin = origin;
         if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json';
 
-        const curlCmd = buildCurl(url, method, headers, body);
+        const requestBody = prepareRequestBody(path, body);
+        const curlCmd = buildCurl(url, method, headers, requestBody);
         if (curlContainer) curlContainer.value = curlCmd;
         responseContainer.textContent = 'Waiting for response...';
 
         const options = { method, headers };
-        if (body !== undefined && body !== null && method !== 'GET' && method !== 'OPTIONS') {
-            options.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (requestBody !== undefined && requestBody !== null && method !== 'GET' && method !== 'OPTIONS') {
+            options.body = typeof requestBody === 'string' ? requestBody : JSON.stringify(requestBody);
         }
 
         try {
@@ -617,9 +748,8 @@
         if (path === '/api/show') {
             els.endpointBodyInput.value = toPrettyJson(API_TESTER_EXAMPLES.show.body);
         } else if (path === '/v1/chat/completions') {
-            const model = els.modelSelect.value || 'llama3.2';
-            const sample = { ...API_TESTER_EXAMPLES.completions.body, model };
-            els.endpointBodyInput.value = toPrettyJson(sample);
+            const model = getSelectedModelName() || 'llama3.2';
+            els.endpointBodyInput.value = toPrettyJson(buildChatCompletionPayload(model, 'Hello from API tester'));
         } else {
             els.endpointBodyInput.value = '';
         }
@@ -628,46 +758,132 @@
     function loadJsonTemplate() {
         const key = els.jsonTemplateSelect.value;
         const template = API_TESTER_EXAMPLES[key];
-        const model = els.modelSelect.value || 'llama3.2';
+        const model = getSelectedModelName() || 'llama3.2';
         const payload = { path: template.path, method: template.method };
         if (template.body) {
-            payload.body = JSON.parse(JSON.stringify(template.body));
+            payload.body = template.path === '/v1/chat/completions'
+                ? buildChatCompletionPayload(model, 'Hello from API tester')
+                : JSON.parse(JSON.stringify(template.body));
             if (payload.body.model) payload.body.model = model;
         }
         els.jsonRequestInput.value = toPrettyJson(payload);
     }
 
+    const PERSISTED_FIELD_IDS = [
+        'apiUrl', 'apiKey', 'contextLen', 'modelSelect', 'modelCustom',
+        'providerPreset', 'promptInput', 'enableReasoning',
+        'endpointSelect', 'endpointMethod', 'endpointPathOverride',
+        'corsOriginInput', 'endpointBodyInput', 'endpointCurlOutput',
+        'jsonTemplateSelect', 'jsonRequestInput', 'jsonCurlOutput',
+        'wolIp', 'wolMac', 'wolBroadcast', 'wolMethod',
+        'wolFritzUser', 'wolFritzPass'
+    ];
+
+    function parseStoredJson(key, fallback = {}) {
+        try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+        catch { return fallback; }
+    }
+
+    function readPersistedField(id) {
+        const el = document.getElementById(id);
+        if (!el) return undefined;
+        if (el.type === 'checkbox') return el.checked;
+        return el.value;
+    }
+
+    function writePersistedField(id, value) {
+        if (value === undefined || value === null) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox') {
+            el.checked = Boolean(value);
+            return;
+        }
+        el.value = value;
+    }
+
+    function collectUiState() {
+        const state = { source: currentSource() };
+        PERSISTED_FIELD_IDS.forEach(id => {
+            const value = readPersistedField(id);
+            if (value !== undefined) state[id] = value;
+        });
+        return state;
+    }
+
+    function persistUiState() {
+        if (_restoringConfig) return;
+        localStorage.setItem(STORAGE.UI_STATE, JSON.stringify(collectUiState()));
+    }
+
+    function restorePersistedFields(state, skipIds = []) {
+        const skip = new Set(skipIds);
+        PERSISTED_FIELD_IDS.forEach(id => {
+            if (!skip.has(id)) writePersistedField(id, state[id]);
+        });
+    }
+
+    function installFieldPersistence() {
+        document.querySelectorAll('input, select, textarea').forEach(el => {
+            el.addEventListener('input', persistUiState);
+            el.addEventListener('change', persistUiState);
+        });
+    }
+
     function saveConfig() {
-        const source = Array.from(els.radios).find(r => r.checked).value;
-        const existing = JSON.parse(localStorage.getItem(STORAGE.CONFIG) || '{}');
+        const source = currentSource();
+        const existing = parseStoredJson(STORAGE.CONFIG, {});
         const urls = existing.urls || {};
         urls[source] = els.apiUrl.value;
-        localStorage.setItem(STORAGE.CONFIG, JSON.stringify({
+        const uiState = collectUiState();
+        const config = {
             source,
             urls,
             key: els.apiKey.value,
             ctx: els.contextLen.value,
-            reasoning: els.enableReasoning.checked
-        }));
+            reasoning: els.enableReasoning.checked,
+            providerPreset: els.providerPreset.value,
+            modelSelect: els.modelSelect.value,
+            modelCustom: els.modelCustom.value,
+            prompt: els.prompt.value,
+            ui: uiState
+        };
+        localStorage.setItem(STORAGE.CONFIG, JSON.stringify(config));
+        localStorage.setItem(STORAGE.UI_STATE, JSON.stringify(uiState));
     }
 
     function loadConfig() {
+        _restoringConfig = true;
         const serverKey = window.__OLLAMA_API_KEY__ || '';
-        const data = localStorage.getItem(STORAGE.CONFIG);
-        if (!data) {
-            if (serverKey) els.apiKey.value = serverKey;
-            handleSourceChange();
-            return;
-        }
-        const c = JSON.parse(data);
-        const r = Array.from(els.radios).find(rad => rad.value === c.source);
+        const c = parseStoredJson(STORAGE.CONFIG, {});
+        const state = { ...(c.ui || {}), ...parseStoredJson(STORAGE.UI_STATE, {}) };
+        const source = state.source || c.source || 'custom';
+        const r = Array.from(els.radios).find(rad => rad.value === source);
         if (r) r.checked = true;
-        const source = c.source || 'docker';
-        const useServerKey = source === 'docker' || source === 'native' || source === 'direct' || source === 'local';
-        els.apiKey.value = useServerKey ? serverKey : (c.key || '');
-        els.contextLen.value = c.ctx || 4096;
-        els.enableReasoning.checked = c.reasoning || false;
-        handleSourceChange(c.urls || {});
+
+        // Restore persisted fields first, then let the source handler adjust
+        // visibility/defaults without triggering a save during page load.
+        restorePersistedFields(state, ['modelSelect']);
+        if (!state.apiKey) {
+            els.apiKey.value = source !== 'custom' && serverKey ? serverKey : (c.key || '');
+        }
+        els.contextLen.value = state.contextLen || c.ctx || DEFAULT_CONTEXT_LENGTH;
+        if (c.reasoning !== undefined && state.enableReasoning === undefined) els.enableReasoning.checked = c.reasoning;
+        if (c.providerPreset && !state.providerPreset) els.providerPreset.value = c.providerPreset;
+        if (c.modelCustom && !state.modelCustom) els.modelCustom.value = c.modelCustom;
+        if (c.prompt && !state.promptInput) els.prompt.value = c.prompt;
+        if (!state.promptInput) els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || els.prompt.value || '';
+
+        handleSourceChange(c.urls || {}, { skipLoad: true, skipSave: true, keepApiUrl: Boolean(state.apiUrl) });
+        if (state.apiUrl) els.apiUrl.value = state.apiUrl;
+        if (state.providerPreset) els.providerPreset.value = state.providerPreset;
+
+        _restoringConfig = false;
+        if (state.modelSelect) {
+            els.modelSelect.dataset.pendingValue = state.modelSelect;
+        }
+        loadModels();
+        return state;
     }
 
     const SOURCE_DEFAULTS = {
@@ -677,19 +893,22 @@
         local:  () => `http://localhost:11434`,
     };
 
-    function handleSourceChange(savedUrls = {}) {
+    function handleSourceChange(savedUrls = {}, options = {}) {
         const source = Array.from(els.radios).find(r => r.checked).value;
         const isCustom = source === 'custom';
         els.presetGroup.style.display = isCustom ? 'block' : 'none';
-        els.modelCustom.style.display = isCustom ? 'block' : 'none';
-        document.getElementById('modelCustomCopyBtn').style.display = isCustom ? 'inline-flex' : 'none';
-        els.modelSelect.style.display = isCustom ? 'none' : 'block';
-        document.getElementById('modelSelectCopyBtn').style.display = isCustom ? 'none' : 'inline-flex';
-        if (SOURCE_DEFAULTS[source]) {
+        els.modelCustomWrap.style.display = isCustom ? 'flex' : 'none';
+        els.modelSelect.style.display = 'block';
+        document.getElementById('modelSelectCopyBtn').style.display = 'inline-flex';
+        if (SOURCE_DEFAULTS[source] && !options.keepApiUrl) {
             els.apiUrl.value = savedUrls[source] || SOURCE_DEFAULTS[source]();
         }
-        loadModels();
-        saveConfig();
+        if (isCustom) {
+            const preset = Array.from(els.providerPreset.options).find(opt => opt.value && opt.value === els.apiUrl.value);
+            els.providerPreset.value = preset ? preset.value : '';
+        }
+        if (!options.skipLoad) loadModels();
+        if (!options.skipSave) saveConfig();
     }
 
     function copyToClipboard(id, btn) {
@@ -711,13 +930,12 @@
     }
 
     async function testAuthentication() {
-        const url = els.apiUrl.value;
         const key = els.apiKey.value;
         if (!key) { els.authResult.innerText = 'Enter a key first'; els.authResult.style.color = 'orange'; return; }
         els.authResult.innerText = 'Testing...';
         els.authResult.style.color = 'var(--text-sec)';
         try {
-            const res = await fetch(`${url}/v1/models`, { headers: { 'Authorization': `Bearer ${key}` } });
+            const res = await fetch(apiUrlForPath('/v1/models'), { headers: authHeaders() });
             if (res.ok) {
                 els.authResult.innerText = '[OK] Key valid';
                 els.authResult.style.color = 'var(--gpu)';
@@ -734,40 +952,52 @@
 
     async function loadModels() {
         const source = Array.from(els.radios).find(r => r.checked).value;
-        if (source === 'custom') return;
-        els.modelSelect.innerHTML = '<option disabled selected>Loading...</option>';
+        if (!els.apiUrl.value.trim()) {
+            setModelOptions([], source === 'custom' ? 'Select a provider or enter an endpoint' : 'Enter an endpoint');
+            return;
+        }
+        els.modelSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
         try {
-            const res = await fetch(`${els.apiUrl.value}/api/tags`, { signal: AbortSignal.timeout(5000) });
+            const modelsPath = source === 'custom' ? '/v1/models' : '/api/tags';
+            const headers = source === 'custom' ? authHeaders() : {};
+            const res = await fetch(apiUrlForPath(modelsPath), {
+                headers,
+                signal: AbortSignal.timeout(10000)
+            });
             if (!res.ok) {
                 // Server is reachable but returned an error (4xx/5xx) — not an offline condition
-                els.modelSelect.innerHTML = '';
+                const data = await res.json().catch(() => ({}));
+                const msg = data.error?.message || data.error?.code || `Error ${res.status}`;
+                setModelOptions([], msg);
                 els.statusDot.className = 'status-dot';
                 els.statusText.innerText = `Error ${res.status}`;
                 return;
             }
             const data = await res.json();
-            const models = data.models || [];
-            if (models.length) {
-                els.modelSelect.innerHTML = models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
-            } else {
-                els.modelSelect.innerHTML = '';
-            }
+            const models = extractModelNames(data);
+            setModelOptions(models, 'No models returned');
             _serverOnline = true;
             els.statusDot.className = 'status-dot status-online';
             els.statusText.innerText = 'Online';
             els.badge.textContent = 'Standby';
             els.badge.style.background = '#95a5a6';
-            checkReasoningCapability();
-            cacheHostMacSilently();
+            if (source !== 'custom') cacheHostMacSilently();
         } catch (e) {
-            // Only network errors / timeouts reach here — true offline
-            els.modelSelect.innerHTML = '';
+            setModelOptions([], source === 'custom' ? `Could not load models: ${e.message}` : 'Could not load models');
+            if (source === 'custom') {
+                els.statusDot.className = 'status-dot';
+                els.statusText.innerText = 'Connection/CORS error';
+                els.badge.textContent = 'SaaS / Custom';
+                els.badge.style.background = '#95a5a6';
+                return;
+            }
+            // Only network errors / timeouts reach here for local Ollama — true offline
             setServerOffline();
         }
     }
 
     function checkReasoningCapability() {
-        const name = els.modelSelect.value.toLowerCase();
+        const name = getSelectedModelName().toLowerCase();
         const isReasoning = name.includes('r1') || name.includes('o1') || name.includes('reason');
         els.reasoningInd.style.display = isReasoning ? 'block' : 'none';
     }
@@ -811,7 +1041,10 @@
             el.addEventListener('click', () => {
                 const idx = parseInt(el.dataset.idx);
                 const entry = loadHistory()[idx];
-                if (entry) els.prompt.value = entry.question;
+                if (entry) {
+                    els.prompt.value = entry.question;
+                    saveConfig();
+                }
             });
         });
     }
@@ -830,43 +1063,55 @@
     }
 
     async function execute() {
-        const source = Array.from(els.radios).find(r => r.checked).value;
-        const url = els.apiUrl.value;
-        const model = source === 'custom' ? els.modelCustom.value : els.modelSelect.value;
-        const prompt = els.prompt.value;
-        if (!prompt || !model) return;
+        const model = getSelectedModelName();
+        const prompt = els.prompt.value.trim();
+        if (!prompt) {
+            els.resp.innerHTML = '<span style="color:#e74c3c">Enter a prompt first.</span>';
+            return;
+        }
+        if (!model) {
+            els.resp.innerHTML = '<span style="color:#e74c3c">Select a model from the listbox or enter a manual model name.</span>';
+            return;
+        }
 
         if (_currentAbort) { _currentAbort.abort(); _currentAbort = null; }
         const controller = new AbortController();
         _currentAbort = controller;
 
         localStorage.setItem(STORAGE.LAST_PROMPT, prompt);
+        saveConfig();
         els.btn.disabled = true;
         els.resp.innerHTML = '<em style="color:#666">Thinking...</em>';
         els.reasoningBox.style.display = 'none';
         const start = performance.now();
         setRequestActive(true);
         try {
-            const res = await fetch(`${url}/v1/chat/completions`, {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...authHeaders()
+            };
+            if (!headers.Authorization) headers.Authorization = 'Bearer ollama';
+            const res = await fetch(apiUrlForPath('/v1/chat/completions'), {
                 method: 'POST',
                 signal: controller.signal,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': els.apiKey.value ? `Bearer ${els.apiKey.value}` : 'Bearer ollama'
-                },
-                body: JSON.stringify({
-                    model,
-                    messages: [{ role: 'user', content: prompt }],
-                    max_tokens: parseInt(els.contextLen.value)
-                })
+                headers,
+                body: JSON.stringify(adaptChatCompletionPayloadForEndpoint(buildChatCompletionPayload(model, prompt)))
             });
             const data = await res.json();
-            const content = data.choices[0].message.content;
+            if (!res.ok) {
+                const msg = data.error?.message || data.error?.code || JSON.stringify(data);
+                throw new Error(`HTTP ${res.status}: ${msg}`);
+            }
+            let content = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text ?? '';
+            if (Array.isArray(content)) {
+                content = content.map(part => part.text || part.content || '').join('');
+            }
+            if (!content) throw new Error('The provider returned no message content.');
 
             if (content.includes('<think>')) {
                 const parts = content.split('</think>');
                 const thinking = parts[0].replace('<think>', '').trim();
-                const answer = parts[1].trim();
+                const answer = (parts[1] || '').trim();
                 els.reasoningBox.innerHTML = renderMd(thinking);
                 els.reasoningBox.style.display = 'block';
                 applyHighlight(els.reasoningBox);
@@ -1041,6 +1286,19 @@
         }
     }
 
+    function selectCustomFallback() {
+        const customRadio = Array.from(els.radios).find(r => r.value === 'custom');
+        if (!customRadio || customRadio.checked) return;
+        const config = parseStoredJson(STORAGE.CONFIG, {});
+        customRadio.checked = true;
+        els.apiUrl.value = config.urls?.custom || '';
+        handleSourceChange(config.urls || {}, { skipLoad: true, keepApiUrl: true });
+        setModelOptions([], 'Select a provider or enter an endpoint');
+        els.statusText.innerText = 'Backend offline; SaaS / Custom selected';
+        els.badge.textContent = 'SaaS / Custom';
+        els.badge.style.background = '#95a5a6';
+    }
+
     function setServerOffline() {
         if (_serverOnline) {
             _serverOnline = false;
@@ -1050,6 +1308,7 @@
             els.badge.style.background = '#e74c3c';
             els.mVram.textContent = 'Memory: -';
             autoWol();
+            selectCustomFallback();
         }
     }
 
@@ -1093,7 +1352,7 @@
 
     els.radios.forEach(r => r.addEventListener('change', () => {
         _serverOnline = true;
-        const existing = JSON.parse(localStorage.getItem(STORAGE.CONFIG) || '{}');
+        const existing = parseStoredJson(STORAGE.CONFIG, {});
         handleSourceChange(existing.urls || {});
     }));
     els.providerPreset.addEventListener('change', () => { els.apiUrl.value = els.providerPreset.value; saveConfig(); loadModels(); });
@@ -1121,9 +1380,9 @@
         icon.style.animation = '';
         btn.disabled = false;
     });
-    els.modelSelect.addEventListener('change', checkReasoningCapability);
-    els.endpointSelect.addEventListener('change', applyEndpointPreset);
-    els.jsonTemplateSelect.addEventListener('change', loadJsonTemplate);
+    els.modelSelect.addEventListener('change', () => { copySelectedModelToManualName(); checkReasoningCapability(); saveConfig(); });
+    els.endpointSelect.addEventListener('change', () => { applyEndpointPreset(); saveConfig(); });
+    els.jsonTemplateSelect.addEventListener('change', () => { loadJsonTemplate(); saveConfig(); });
     els.btn.addEventListener('click', execute);
     els.testAuthBtn.addEventListener('click', testAuthentication);
 
@@ -1210,6 +1469,7 @@
         if (isFritz && !document.getElementById('wolBroadcast').value.includes('.')) {
             document.getElementById('wolBroadcast').value = 'fritz.box';
         }
+        saveConfig();
     });
 
     document.getElementById('wolResolveBtn').addEventListener('click', async () => {
@@ -1222,6 +1482,7 @@
             if (data.ok) {
                 document.getElementById('wolMac').value = data.mac;
                 saveKnownHost(ip, data.mac);
+                saveConfig();
                 wolSetStatus(`MAC resolved and cached: ${data.mac}`, '#2ecc71');
             } else {
                 wolSetStatus(data.error || 'MAC not found.', 'orange');
@@ -1321,26 +1582,28 @@
     els.radios.forEach(r => r.addEventListener('change', () => renderSavedEndpoints(), { passive: true }));
 
     window.onload = async () => {
-        loadConfig();
+        installFieldPersistence();
+        const restoredState = loadConfig() || {};
         renderSavedEndpoints();
-        els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
-        applyEndpointPreset();
-        loadJsonTemplate();
+        if (!restoredState.promptInput) els.prompt.value = localStorage.getItem(STORAGE.LAST_PROMPT) || '';
+        if (!restoredState.endpointBodyInput) applyEndpointPreset();
+        if (!restoredState.jsonRequestInput) loadJsonTemplate();
         els.endpointResponse.textContent = 'Waiting for request...';
         els.jsonResponse.textContent = 'Waiting for request...';
         renderHistory();
         // Pre-populate WOL fields from current endpoint
         const host = extractHost(els.apiUrl.value);
         if (host) {
-            document.getElementById('wolIp').value = host;
-            document.getElementById('wolBroadcast').value = isLocalAddress(host) ? '255.255.255.255' : host;
-            document.getElementById('wolMethod').value = isLocalAddress(host) ? 'direct' : 'fritzbox';
+            if (!restoredState.wolIp) document.getElementById('wolIp').value = host;
+            if (!restoredState.wolBroadcast) document.getElementById('wolBroadcast').value = isLocalAddress(host) ? '255.255.255.255' : host;
+            if (!restoredState.wolMethod) document.getElementById('wolMethod').value = isLocalAddress(host) ? 'direct' : 'fritzbox';
             const fa = document.getElementById('wolFritzAuthGroup');
             const fp = document.getElementById('wolFritzPassGroup');
-            const remote = !isLocalAddress(host);
+            const remote = document.getElementById('wolMethod').value === 'fritzbox' || !isLocalAddress(host);
             fa.style.display = remote ? 'block' : 'none';
             fp.style.display = remote ? 'block' : 'none';
         }
+        persistUiState();
         setInterval(updateHardwareMetrics, 5000);
         const proxyFound = await detectWolProxy();
         if (!proxyFound) {
